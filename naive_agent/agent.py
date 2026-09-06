@@ -41,8 +41,8 @@ INSTRUCTIONS = f"""You are the phone booking assistant for {RESTAURANT_NAME}.
 Keep replies to one short sentence — this is a live phone call.
 
 When the caller asks for a table, call the `create_booking` tool with the party
-size and the time. Call it exactly once per request. After the tool returns,
-say nothing further; the confirmation sentence is spoken for you.
+size and the time. Call it exactly once per request. After the tool returns, reply with exactly "OK." and nothing else; the
+confirmation sentence is spoken for you by a dedicated utterance.
 
 If the party size or time is unclear, ask one brief question instead of guessing.
 """
@@ -101,8 +101,21 @@ def build_agent(config: AgentConfig | None = None):
 
             # Speak the locked confirmation sentence. Whether the caller ever
             # hears it has no bearing on the row that already exists.
-            ctx.session.say(confirmation_sentence(party_size, time_str))
-            return f"Booked. booking_id={booking_id}"
+            #
+            # We intentionally capture the SpeechHandle instead of firing and
+            # forgetting: the handle makes the confirmation utterance
+            # observable (interruption, playback position) in logs, which is
+            # the naive agent's whole purpose as the control group.
+            self.confirmation_handle = ctx.session.say(
+                confirmation_sentence(party_size, time_str),
+                allow_interruptions=True,
+            )
+            # "OK." (not the confirmation sentence) keeps the LLM from
+            # paraphrasing a second confirmation on top of session.say(). The
+            # word "confirmed" must appear exactly once per booking, or the
+            # gating-word oracle in the harness sees it twice with different
+            # timings.
+            return "OK."
 
     return NaiveBookingAgent(), cfg
 
