@@ -157,6 +157,15 @@ def run(
                 "live mode requires an explicit --trials cap: every trial spends real "
                 "provider quota. See the API budget rule in README.md."
             )
+        # Fail fast instead of crashing deep inside run_sweep: live mode is a
+        # documented-but-unimplemented path (see docs/ACCEPTANCE_TEST.md), so
+        # refuse here, before anything is built.
+        raise click.ClickException(
+            "live mode is not implemented in this build. Run the offline "
+            "acceptance sweep (default replay mode), or implement the live "
+            "driver described in docs/ACCEPTANCE_TEST.md against a real room "
+            "with an explicit --trials cap."
+        )
 
     config = SweepConfig(
         target=target,
@@ -298,6 +307,89 @@ def heard(at_s: float, fixture: str | None, gating_word: str) -> None:
         fg="green" if reached else "yellow",
         bold=True,
     )
+
+
+@cli.command()
+@click.option("--results-dir", type=click.Path(file_okay=False), default=None)
+@click.option(
+    "--runs-per-offset",
+    type=int,
+    default=SWEEP_RUNS_PER_OFFSET,
+    show_default=True,
+)
+@click.option(
+    "--quick",
+    is_flag=True,
+    help="Small ladder (-50..+50 ms, 25 ms steps) for CI and quick demos.",
+)
+@click.option("--verbose", is_flag=True)
+def verify(results_dir: str | None, runs_per_offset: int, quick: bool, verbose: bool) -> None:
+    """Run the judge-ready audit: sweeps, summary, orphan check, evidence chart.
+
+    Runs both agent variants, checks that no PENDING_AUDIO row survives a fenced
+    sweep, writes ``summary.json`` and ``mismatch_by_offset.svg`` into the
+    results directory, and prints the markdown evidence table. Exit code 1 if
+    the fenced variant mismatches or leaks any row. Offline and free.
+    """
+    _configure_logging(verbose)
+
+    if quick:
+        offsets = _offsets(-50.0, 50.0, 25.0)
+    else:
+        offsets = _offsets(SWEEP_OFFSET_MIN_MS, SWEEP_OFFSET_MAX_MS, SWEEP_OFFSET_STEP_MS)
+
+    results: list[SweepResult] = []
+    for target in (VARIANT_NAIVE, VARIANT_FENCED):
+        config = SweepConfig(
+            target=target,
+            offsets_ms=offsets,
+            runs_per_offset=runs_per_offset,
+            results_dir=results_dir,
+        )
+        with click.progressbar(
+            length=config.planned_trials(), label=f"{target:>6} sweep"
+        ) as bar:
+            results.append(run_sweep(config, on_trial=lambda _r: bar.update(1)))
+
+    click.echo()
+    for result in results:
+        _print_result(result, quiet=False)
+
+    from reporting.dashboard import evidence_table, render_summary, summarize
+
+    summary = summarize([r.log_path for r in results])
+    render_summary(summary)
+
+    out_dir = Path(results_dir) if results_dir else trial_log_path(VARIANT_FENCED).parent
+    from .trial_log import write_json_atomic
+
+    summary_path = out_dir / "summary.json"
+    write_json_atomic(summary_path, summary)
+    click.echo(f"summary written to {summary_path}")
+
+    # Orphan audit: a fenced sweep must never leave an unresolved PENDING row.
+
+    fenced = next(r for r in results if r.target == VARIANT_FENCED)
+    orphans = fenced.orphans
+    click.secho(
+        f"orphan PENDING_AUDIO rows in fenced sweep: {orphans}",
+        fg="green" if orphans == 0 else "red",
+        bold=True,
+    )
+
+    # One-chart evidence for the pitch deck / demo screen.
+    from reporting.chart import render_mismatch_chart
+
+    all_records = [rec for r in results for rec in r.records]
+    chart_path = out_dir / "mismatch_by_offset.svg"
+    render_mismatch_chart(all_records, chart_path)
+    click.echo(f"chart written to {chart_path}")
+
+    click.echo("\nmarkdown evidence table:")
+    click.echo(evidence_table(summary))
+
+    if not fenced.passed or orphans:
+        raise SystemExit(1)
 
 
 def main(argv: list[str] | None = None) -> int:
