@@ -27,10 +27,11 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Self
 
 __all__ = [
     "DB_STATUS_MISSING",
@@ -59,7 +60,7 @@ DEFAULT_RESULTS_DIR = Path(__file__).resolve().parents[1] / "results"
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 def trial_log_path(target: str, results_dir: str | os.PathLike[str] | None = None) -> Path:
@@ -114,7 +115,7 @@ class TrialRecord:
         missing = [name for name in REQUIRED_FIELDS if name not in payload]
         if missing:
             raise ValueError(f"trial record missing required field(s): {', '.join(missing)}")
-        known = {f for f in cls.__dataclass_fields__}  # noqa: SIM118 - explicit is clearer
+        known = {f for f in cls.__dataclass_fields__}  # explicit membership is clearer than a set comprehension over the same dict
         return cls(**{k: v for k, v in payload.items() if k in known})
 
 
@@ -131,7 +132,7 @@ class TrialLogWriter:
         self._mode = "w" if truncate else "a"
         self._fh = None
 
-    def __enter__(self) -> TrialLogWriter:
+    def __enter__(self) -> Self:
         self._fh = self.path.open(self._mode, encoding="utf-8")
         return self
 
