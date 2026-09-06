@@ -1,5 +1,12 @@
 # --- Runtime (live voice agents only) ---
 livekit-agents
+# The livekit.plugins namespace is shipped as separate distributions in 1.8:
+# without these, `from livekit.plugins import deepgram, openai, rime, silero`
+# (used by both agent variants) raises ModuleNotFoundError at startup.
+livekit-plugins-rime
+livekit-plugins-deepgram
+livekit-plugins-openai
+livekit-plugins-silero
 openai
 deepgram-sdk
 
