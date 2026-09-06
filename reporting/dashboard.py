@@ -16,8 +16,9 @@ import json
 import math
 import time
 from collections import Counter
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 import click
 from rich.console import Console, Group
@@ -183,8 +184,8 @@ def banner(summary: dict[str, Any]) -> Panel:
         body = Text.assemble(
             ("FAIL", "bold white on red"),
             (
-                f"  fenced agent: {fenced['mismatches']} state mismatch(es) "
-                f"across {fenced['trials']} trials",
+                (f"  fenced agent: {fenced['mismatches']} state mismatch(es) "
+                 f"across {fenced['trials']} trials"),
                 "red",
             ),
         )
