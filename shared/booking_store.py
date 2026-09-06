@@ -32,7 +32,7 @@ import sqlite3
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 __all__ = [
@@ -118,7 +118,7 @@ class IllegalTransitionError(BookingStoreError):
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+    return datetime.now(UTC).isoformat(timespec="microseconds")
 
 
 def current_db_path() -> str:
@@ -195,6 +195,7 @@ def reset_db(path: str | None = None) -> None:
 
 def _validate_booking_input(party_size: int, time_str: str) -> None:
     if isinstance(party_size, bool) or not isinstance(party_size, int):
+        # Deliberately ValueError: documented input-validation error.
         raise ValueError(f"party_size must be an int, got {type(party_size).__name__}")
     if party_size <= 0:
         raise ValueError(f"party_size must be positive, got {party_size}")
@@ -347,8 +348,19 @@ def get_transaction_log(booking_id: int | None = None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def count_bookings(status: str | None = None, agent_variant: str | None = None) -> int:
-    """Count bookings, optionally filtered by status and/or agent variant."""
+def count_bookings(
+    status: str | None = None,
+    agent_variant: str | None = None,
+    *,
+    id_lo: int | None = None,
+    id_hi: int | None = None,
+) -> int:
+    """Count bookings, optionally filtered by status, variant and/or id range.
+
+    The id range powers the harness' orphan audit: after a sweep, every booking
+    id the sweep created must have left ``PENDING_AUDIO`` -- a row still pending
+    after ``on_session_closed`` is a leaked (unresolved) state change.
+    """
     clauses: list[str] = []
     params: list[object] = []
     if status is not None:
@@ -357,6 +369,12 @@ def count_bookings(status: str | None = None, agent_variant: str | None = None) 
     if agent_variant is not None:
         clauses.append("agent_variant = ?")
         params.append(agent_variant)
+    if id_lo is not None:
+        clauses.append("id >= ?")
+        params.append(id_lo)
+    if id_hi is not None:
+        clauses.append("id <= ?")
+        params.append(id_hi)
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
 
     with _connect() as conn:
