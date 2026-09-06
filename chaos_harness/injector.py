@@ -31,8 +31,8 @@ from shared.constants import CONFIRMATION_GATING_WORD
 from shared.rime_timestamps import WordTimeline
 
 __all__ = [
-    "BargeInPlan",
     "NEVER_CANCEL",
+    "BargeInPlan",
     "plan_barge_in",
 ]
 
