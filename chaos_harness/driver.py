@@ -20,14 +20,16 @@ path that spends provider quota.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterator
 
+from shared import booking_store as bs
 from shared.constants import (
     CONFIRMATION_GATING_WORD,
     SWEEP_RUNS_PER_OFFSET,
     VARIANT_DUMMY,
+    VARIANT_FENCED,
     confirmation_sentence,
     sweep_offsets_ms,
 )
@@ -104,6 +106,8 @@ class SweepResult:
     log_path: Path
     trials: int
     mismatches: int
+    orphans: int = 0
+    """Unresolved PENDING_AUDIO rows left behind by the sweep (fenced target)."""
     records: list[TrialRecord] = field(default_factory=list)
 
     @property
@@ -229,12 +233,26 @@ def run_sweep(
             if on_trial is not None:
                 on_trial(record)
 
+    # Orphan audit: every booking id this sweep created must have reached a
+    # terminal state. A row still PENDING_AUDIO after on_session_closed is a
+    # leaked (unresolved) state change -- the exact failure mode the fence
+    # exists to prevent, so it must fail the sweep loudly.
+    orphans = 0
+    if config.target == VARIANT_FENCED and keep_records and records:
+        ids = [r.booking_id for r in records if r.booking_id is not None]
+        if ids:
+            lo, hi = min(ids), max(ids)
+            orphans = bs.count_bookings(status=bs.STATUS_PENDING_AUDIO, id_lo=lo, id_hi=hi)
+        if orphans:
+            logger.error("sweep left %d PENDING_AUDIO row(s) un-resolved", orphans)
+
     logger.info("sweep complete: %d trials, %d mismatches -> %s", trial_id, mismatches, log_path)
     return SweepResult(
         target=config.target,
         log_path=log_path,
         trials=trial_id,
         mismatches=mismatches,
+        orphans=orphans,
         records=records,
     )
 
