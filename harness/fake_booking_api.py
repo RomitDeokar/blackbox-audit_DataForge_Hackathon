@@ -1,8 +1,16 @@
+"""A deliberately tiny, fully local fake booking API.
+
+Kept as the 'real backend' stand-in for demos: it writes a JSON receipt to
+reports/ so a judge can see a booking land on disk without any network call.
+The live agents talk to shared.booking_store (SQLite) instead; this module
+exists so the demo can show a human-readable receipt file and so the test
+suite can prove the booking path never touches an external service.
+"""
+
 import json
 from pathlib import Path
 
 from shared.models import Booking
-
 
 REPORTS_DIR = Path(__file__).resolve().parents[1] / "reports"
 DEFAULT_BOOKING_REPORT = REPORTS_DIR / "latest_booking.json"
