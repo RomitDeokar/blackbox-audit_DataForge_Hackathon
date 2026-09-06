@@ -1,0 +1,7 @@
+livekit-agents
+openai
+deepgram-sdk
+requests
+python-dotenv
+rich
+pytest
