@@ -29,9 +29,10 @@ committed on the word's *start* would still create phantom bookings.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Protocol
+from typing import Protocol
 
 from .rime_timestamps import TimedWord, WordTimeline, normalize_word
 
