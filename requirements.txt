@@ -1,20 +1,26 @@
 # --- Runtime (live voice agents only) ---
-livekit-agents
-# The livekit.plugins namespace is shipped as separate distributions in 1.8:
-# without these, `from livekit.plugins import deepgram, openai, rime, silero`
-# (used by both agent variants) raises ModuleNotFoundError at startup.
-livekit-plugins-rime
-livekit-plugins-deepgram
-livekit-plugins-openai
-livekit-plugins-silero
-openai
-deepgram-sdk
+# PINNED 2026-09-06. The AgentServer + @server.rtc_session API and the
+# word-level timestamp plumbing (use_tts_aligned_transcript, transcription_node)
+# were verified against livekit-agents 1.8.x. The plugins ship as separate
+# distributions in the 1.8 line; without these pins a teammate running
+# `pip install` weeks later gets a different API and the worker crashes at
+# startup or silently never fires the fence hooks.
+#
+# If you must upgrade: bump ALL livekit-* pins together in one commit, then
+# re-run `pytest` AND one live call per agent variant before merging.
+livekit-agents==1.8.0
+livekit-plugins-rime==1.8.0
+livekit-plugins-deepgram==1.8.0
+livekit-plugins-openai==1.8.0
+livekit-plugins-silero==1.8.0
+openai>=1.0,<2.0
+deepgram-sdk>=3.0,<5.0
 
 # --- CLI + reporting (offline harness, dashboard, tests) ---
-click
-rich
-python-dotenv
-requests
+click>=8.1,<9.0
+rich>=13.0,<15.0
+python-dotenv>=1.0,<2.0
+requests>=2.31,<3.0
 
 # --- Tests ---
-pytest
+pytest>=8.0,<9.0
