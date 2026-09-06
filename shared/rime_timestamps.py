@@ -24,9 +24,11 @@ from __future__ import annotations
 import json
 import re
 from bisect import bisect_right
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 __all__ = [
     "DEFAULT_TIMELINE_FIXTURE",
@@ -96,7 +98,7 @@ class WordTimeline:
         # is monotonic, and fall back to an explicit scan when it is not.
         ends = tuple(w.end for w in self._words)
         self._ends: tuple[float, ...] = ends
-        self._ends_sorted: bool = all(a <= b for a, b in zip(ends, ends[1:]))
+        self._ends_sorted: bool = all(a <= b for a, b in pairwise(ends))
 
     # -- construction ----------------------------------------------------
 
@@ -230,6 +232,8 @@ def parse_rime_timestamps(payload: Any) -> list[TimedWord]:
         if not isinstance(block, dict):
             raise ValueError("'word_timestamps' must be an object")
         if "words" not in block:
+            # Deliberately ValueError (not TypeError): the public API documents
+            # this as a payload-shape error and tests pin the message.
             raise ValueError(
                 "unrecognised Rime timestamp payload: expected a 'word_timestamps' object "
                 f"with a 'words' list, got keys {sorted(block)!r}"
@@ -254,6 +258,7 @@ def parse_rime_timestamps(payload: Any) -> list[TimedWord]:
                 out.append(item)
                 continue
             if not isinstance(item, dict):
+                # Deliberately ValueError: documented payload-shape error.
                 raise ValueError(f"unsupported timestamp entry: {item!r}")
             text = item.get("text", item.get("word"))
             if text is None or "start" not in item or "end" not in item:
@@ -263,6 +268,7 @@ def parse_rime_timestamps(payload: Any) -> list[TimedWord]:
             )
         return out
 
+    # Deliberately ValueError: documented payload-shape error.
     raise ValueError(f"unsupported Rime timestamp payload type: {type(payload).__name__}")
 
 
