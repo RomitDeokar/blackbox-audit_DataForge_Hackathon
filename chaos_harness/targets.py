@@ -47,8 +47,8 @@ from .trial_log import DB_STATUS_MISSING
 
 __all__ = [
     "TARGETS",
-    "TrialOutcome",
     "Target",
+    "TrialOutcome",
     "get_target",
 ]
 
