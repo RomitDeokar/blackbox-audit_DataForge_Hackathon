@@ -1,12 +1,15 @@
+import argparse
 import json
 import os
 import sys
+from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
 
 SENTENCE = "Okay, you're confirmed for a table for 4 at 7 PM."
 RIME_TTS_URL = "https://users.rime.ai/v1/rime-tts"
+DEFAULT_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "rime_confirmation_timestamps.json"
 
 
 def parse_sse_events(response):
@@ -36,7 +39,23 @@ def parse_sse_events(response):
         yield event_type, "\n".join(data_lines)
 
 
-def main():
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="One-shot Rime TTS timestamp probe (exactly one paid API call)."
+    )
+    parser.add_argument(
+        "--save-fixture",
+        metavar="PATH",
+        nargs="?",
+        const=str(DEFAULT_FIXTURE),
+        help=(
+            "After a successful capture, write the timestamps frame to PATH "
+            "(default: fixtures/rime_confirmation_timestamps.json). Nothing is "
+            "written unless a real 'timestamps' event was received."
+        ),
+    )
+    args = parser.parse_args(argv)
+
     load_dotenv()
     api_key = os.getenv("RIME_API_KEY")
 
@@ -83,12 +102,39 @@ def main():
                 except json.JSONDecodeError:
                     timing_sections.append(data)
 
-        if timing_sections:
-            print("\nTiming/alignment information:")
-            for section in timing_sections:
-                print(json.dumps(section, indent=2) if isinstance(section, dict) else section)
-        else:
+        if not timing_sections:
             print("\nNo word-level timestamps or timing/alignment section found in the response.")
+            return 1
+
+        print("\nTiming/alignment information:")
+        for section in timing_sections:
+            print(json.dumps(section, indent=2) if isinstance(section, dict) else section)
+
+        first = timing_sections[0]
+        if not isinstance(first, dict) or "word_timestamps" not in first:
+            print(
+                "\nReceived a timestamps event with an unexpected shape; "
+                "refusing to write a fixture without verifying it."
+            )
+            return 1
+
+        if args.save_fixture:
+            out = Path(args.save_fixture)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            frame = {
+                "_comment": (
+                    "Live-captured Rime 'timestamps' frame (see scripts/test_rime.py). "
+                    "Captured shape: word_timestamps.words/start/end."
+                ),
+                "_provenance": "live-capture",
+                "_sentence": SENTENCE,
+                "_model": payload["modelId"],
+                "_speaker": payload["speaker"],
+                "_sampling_rate": payload["samplingRate"],
+                **first,
+            }
+            out.write_text(json.dumps(frame, indent=2) + "\n", encoding="utf-8")
+            print(f"\nFixture written to {out}")
 
     except requests.RequestException as exc:
         print("Rime request failed. No automatic retry was attempted.")

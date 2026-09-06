@@ -1,5 +1,12 @@
 # BlackBox Audit: Prompts, Context, and Progress
 
+> **Status note (Part 8):** the file below is the historical Part 0/1 scaffold
+> transcript from the original session. Parts 2–7 are now implemented and the
+> acceptance sweep passes offline — see README.md, docs/ARCHITECTURE.md,
+> docs/ACCEPTANCE_TEST.md and RIME_EVIDENCE.md for the current state.
+> ">
+> **What Is Not Built Yet** at the bottom is historical and no longer accurate.
+
 ## Project Goal
 
 BlackBox Audit is a voice-agent reliability experiment.

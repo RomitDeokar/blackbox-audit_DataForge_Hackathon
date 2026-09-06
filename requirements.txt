@@ -1,7 +1,13 @@
+# --- Runtime (live voice agents only) ---
 livekit-agents
 openai
 deepgram-sdk
-requests
-python-dotenv
+
+# --- CLI + reporting (offline harness, dashboard, tests) ---
+click
 rich
+python-dotenv
+requests
+
+# --- Tests ---
 pytest

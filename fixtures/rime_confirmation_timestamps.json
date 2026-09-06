@@ -1,0 +1,53 @@
+{
+  "_comment": "Offline replay fixture for the locked confirmation sentence. IMPORTANT: the SHAPE here is the verified real Rime 'timestamps' frame (word_timestamps.words/start/end) confirmed both by a live Part-0 call and by livekit-plugins-rime/tts.py, but these specific numbers are PLACEHOLDER pacing, not a captured Rime response. Overwrite them with a real capture before quoting sweep numbers as Rime-measured: python scripts/test_rime.py --save-fixture",
+  "_provenance": "placeholder-pacing",
+  "_sentence": "Okay, you're confirmed for a table for 4 at 7 PM.",
+  "_model": "mistv2",
+  "_speaker": "astra",
+  "_sampling_rate": 22050,
+  "type": "timestamps",
+  "word_timestamps": {
+    "words": [
+      "Okay,",
+      "you're",
+      "confirmed",
+      "for",
+      "a",
+      "table",
+      "for",
+      "four",
+      "at",
+      "seven",
+      "P",
+      "M."
+    ],
+    "start": [
+      0.0,
+      0.476,
+      0.708,
+      1.288,
+      1.44,
+      1.556,
+      1.928,
+      2.08,
+      2.44,
+      2.6,
+      3.028,
+      3.248
+    ],
+    "end": [
+      0.452,
+      0.696,
+      1.276,
+      1.428,
+      1.544,
+      1.916,
+      2.068,
+      2.428,
+      2.588,
+      3.016,
+      3.236,
+      3.564
+    ]
+  }
+}

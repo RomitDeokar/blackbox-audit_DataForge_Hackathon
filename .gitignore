@@ -1,8 +1,35 @@
+# Secrets — never commit real keys
 .env
-**pycache**/
-*.pyc
-.venv/
-venv/
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs
+.venv/
+.venv*/
+venv/
+env/
+
+# Databases produced by the booking store
+*.db
+*.db-wal
+*.db-shm
+
+# Trial output / reports (keep the .gitkeep files)
 reports/*.json
+reports/*.jsonl
+results/*.json
+results/*.jsonl
+!reports/.gitkeep
+!results/.gitkeep
+
+# OS noise
 .DS_Store
+Thumbs.db
