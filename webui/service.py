@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -51,7 +52,7 @@ from shared.constants import (
     VARIANT_NAIVE,
     confirmation_sentence,
 )
-from shared.rime_timestamps import WordTimeline, load_timeline
+from shared.rime_timestamps import TimedWord, WordTimeline, load_timeline
 
 __all__ = [
     "CallSession",
@@ -285,6 +286,182 @@ class CallSession:
         }
 
 
+@dataclass
+class BrowserCallSession(CallSession):
+    """Browser segment acknowledgements, NOT cached Rime timestamps.
+
+    Whole segments count only after speechSynthesis.onend. This deliberately
+    conservative demo adapter exercises the original AudioFence and SQLite.
+    Browser acknowledgements are untrusted telemetry, not proof of human hearing.
+    """
+
+    acknowledged: int = 0
+    last_position: float = 0.0
+    lock: Any = field(default_factory=threading.RLock, repr=False)
+
+    @property
+    def segments(self) -> list[str]:
+        return [f"Your table for {self.party_size} at {self.time_str} is", "confirmed.", "Thank you."]
+
+    @property
+    def sentence(self) -> str:
+        return " ".join(self.segments)
+
+    @property
+    def gating_word_end_s(self) -> float | None:
+        return next((w.end for w in self.timeline.words if w.normalized == self.gating_word), None)
+
+    def expected_committed(self) -> bool:
+        return self.gating_word_end_s is not None
+
+    def heard_text(self) -> str:
+        return self.timeline.text
+
+    def acknowledge(self, index: int, position: float) -> None:
+        if self.resolved_at is not None:
+            return
+        if index < self.acknowledged:
+            return  # idempotent retry
+        if index != self.acknowledged or index >= len(self.segments):
+            raise ValueError("Audio segments must be acknowledged in order")
+        if position <= self.last_position:
+            raise ValueError("Playback position must increase")
+        words = list(self.timeline.words)
+        for token in self.segments[index].split():
+            words.append(TimedWord(token, self.last_position, position))
+        self.timeline = WordTimeline(words)
+        self.advance(position)
+        self.last_position = position
+        self.acknowledged += 1
+        self.log_event("browser_audio_end", f"Segment {index + 1} completed: {self.segments[index]}", at_s=position)
+
+    def close_browser(self, action: str, position: float) -> None:
+        if self.resolved_at is not None:
+            return
+        position = max(position, self.last_position)
+        if action == "complete":
+            if self.acknowledged != len(self.segments):
+                raise ValueError("Cannot complete before all audio segments are acknowledged")
+            self.finish(position)
+        else:
+            self.barge_in(position)
+
+    def hang_up(self) -> None:
+        self.close_browser("interrupt", self.last_position)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data.update(mode="browser_voice", segments=self.segments,
+                    acknowledged_segments=self.acknowledged,
+                    evidence="browser speech-synthesis segment completion; not Rime alignment")
+        return data
+
+
+def parse_booking_text(text: str, party_size: int | None = None,
+                       time_str: str | None = None) -> dict[str, Any]:
+    """API-free booking dialogue. Latest non-negated slot wins; never guess AM/PM.
+
+    Partial slots are returned even on clarification. An unqualified time is
+    retained without a period so a subsequent 'PM' can complete it, rather than
+    silently restoring the previous booking time.
+    """
+    normalized = text.lower().replace("’", "'")
+    normalized = re.sub(r"\b([ap])\s*\.?\s*m\.?", r"\1m", normalized)
+    units = dict(zip(
+        "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split(),
+        range(20),
+    ))
+    tens = dict(zip("twenty thirty forty fifty sixty seventy eighty ninety".split(), range(20, 100, 10)))
+    for word, value in tens.items():
+        normalized = re.sub(r"\b" + word + r"[- ](" + "|".join(list(units)[1:10]) + r")\b",
+                            lambda m: str(value + units[m[1]]), normalized)
+    for word, value in {**units, **tens}.items():
+        normalized = re.sub(r"\b" + word + r"\b", str(value), normalized)
+    normalized = re.sub(r"\bnoon\b", "12 pm", normalized)
+    normalized = re.sub(r"\bmidnight\b", "12 am", normalized)
+    normalized = re.sub(r"\b(\d{1,2})\s+o'?clock\b", r"\1", normalized)
+    normalized = re.sub(r"\b(\d{1,2})\s+(\d{2})(?=\s*(?:am|pm)\b)", r"\1:\2", normalized)
+    normalized = re.sub(r"\b(?:in the |this )?(?:evening|afternoon|tonight)\b", "pm", normalized)
+    normalized = re.sub(r"\b(?:in the |this )?morning\b", "am", normalized)
+    # '8 PM instead of 7 PM' and '8 PM, not 7 PM' must not choose the old slot.
+    normalized = re.sub(r"\b(?:instead of|not)\s+\d+(?::\d+)?\s*(?:am|pm|people|guests)?", "", normalized)
+
+    def result(reply: str, **extra: Any) -> dict[str, Any]:
+        return {"ready": False, "party_size": party_size, "time_str": time_str,
+                "reply": reply, "engine": "local-booking-dialogue", **extra}
+
+    if re.search(r"\b(?:cancel|never mind|nevermind)\b", normalized):
+        return result("I will cancel this conversation's booking and keep its audit history.", cancel=True)
+    if re.search(r"\b(?:wait|stop|hold on)\b", normalized) and not re.search(r"\d", normalized):
+        return result("I've stopped speaking. What would you like to change?")
+    if re.search(r"\b(?:new|another|separate)\s+(?:booking|table|reservation)\b", normalized):
+        party_size, time_str = None, None
+
+    parties = []
+    for pattern in (
+        r"\b(?:table for|party of|for|we are|we're|there are|there will be|make (?:it|that)|change (?:it|that) to)\s+(\d{1,3})\b",
+        r"\b(\d{1,3})\s+(?:people|persons|guests|of us|seats)\b",
+    ):
+        for match in re.finditer(pattern, normalized):
+            # 'for 8 PM' is a time, not a party size; generic 'make it 8' is ambiguous.
+            suffix = normalized[match.end():]
+            if re.match(r"\s*(?::|am\b|pm\b)", suffix):
+                continue
+            if match[0].startswith(("make", "change")) and not re.match(r"\s+(?:people|persons|guests|of us|seats)\b", suffix):
+                continue
+            parties.append(match)
+    party = max(parties, key=lambda m: m.start(), default=None)
+    if party:
+        party_size = int(party[1])
+
+    times = list(re.finditer(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", normalized))
+    for match in re.finditer(r"\b(?:at|for|make (?:it|that)|change (?:it|that) to|move (?:it|that) to)\s+(\d{1,2})(?::(\d{2}))?(?:\s*(am|pm))?\b", normalized):
+        if any(p.start() <= match.start() < p.end() for p in parties):
+            continue
+        if re.match(r"\s+(?:people|persons|guests|of us|seats)\b", normalized[match.end():]):
+            continue
+        times.append(match)
+    at = max(times, key=lambda m: m.start(), default=None)
+    if not party and not at:
+        bare = re.fullmatch(r"\s*(\d{1,2})(?::(\d{2}))?\s*[.!?]?\s*", normalized)
+        if bare and party_size is None and bare[2] is None:
+            party_size = int(bare[1])
+            party = bare
+        elif bare and party_size is not None:
+            hour, minute = bare[1], bare[2] or "00"
+            normalized = f"at {hour}:{minute}"
+            at = re.search(r"at (\d{1,2}):(\d{2})(am|pm)?", normalized)
+    if at:
+        hour, minute, period = int(at[1]), int(at[2] or 0), at[3]
+        if hour > 23 or minute > 59 or (period and not 1 <= hour <= 12):
+            time_str = None
+            return result("Please give a valid time, including AM or PM.")
+        time_str = f"{hour}:{minute:02d}" + (f" {period.upper()}" if period else "")
+    else:
+        period = re.fullmatch(r"\s*(am|pm)[.!]?\s*", normalized)
+        if period and time_str and re.fullmatch(r"\d{1,2}:\d{2}", time_str):
+            hour = int(time_str.split(":")[0])
+            if 1 <= hour <= 12:
+                time_str += " " + period[1].upper()
+                at = period
+
+    if party_size is not None and not 1 <= party_size <= 99:
+        party_size = None
+        return result("Please give a party size between 1 and 99.")
+    if time_str and re.fullmatch(r"(?:[1-9]|1[0-2]):\d{2}", time_str):
+        return result(f"Is {time_str} AM or PM?", awaiting="period")
+    changed = party is not None or at is not None
+    if not changed and not re.search(r"\b(?:book|table|reservation)\b", normalized):
+        if re.search(r"\b(?:thanks|thank you|yes|correct|that's right)\b", normalized):
+            return result("You're welcome. Your current booking details are shown in the audit.")
+        return result("Hello! I can help with a table reservation. How many people and what time? You can also correct the size or time.")
+    if not party_size:
+        return result("How many people is the table for?", awaiting="party_size")
+    if not time_str:
+        return result(f"What time would you like the table for {party_size}? Include AM or PM.", awaiting="time")
+    return result(f"Table for {party_size} at {time_str}.", ready=True)
+
+
 class SessionStore:
     """Bounded, thread-safe registry of demo sessions.
 
@@ -304,7 +481,9 @@ class SessionStore:
             self._order.append(session.session_id)
             while len(self._order) > self._max:
                 oldest = self._order.pop(0)
-                self._sessions.pop(oldest, None)
+                expired = self._sessions.pop(oldest, None)
+                if expired and expired.resolved_at is None:
+                    expired.hang_up()
 
     def get(self, session_id: str) -> CallSession:
         with self._lock:
@@ -461,16 +640,22 @@ class DemoService:
 
     def advance_call(self, session_id: str, position_s: float) -> dict[str, Any]:
         session = self.sessions.get(session_id)
+        if isinstance(session, BrowserCallSession):
+            raise ValueError("Browser voice sessions require ordered /api/voice/event telemetry")
         session.advance(position_s)
         return session.to_dict()
 
     def barge_in(self, session_id: str, position_s: float) -> dict[str, Any]:
         session = self.sessions.get(session_id)
+        if isinstance(session, BrowserCallSession):
+            raise ValueError("Browser voice sessions require ordered /api/voice/event telemetry")
         session.barge_in(position_s)
         return session.to_dict()
 
     def finish_call(self, session_id: str, position_s: float | None = None) -> dict[str, Any]:
         session = self.sessions.get(session_id)
+        if isinstance(session, BrowserCallSession):
+            raise ValueError("Browser voice sessions require ordered /api/voice/event telemetry")
         session.finish(position_s)
         return session.to_dict()
 

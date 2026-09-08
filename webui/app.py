@@ -13,8 +13,9 @@ and validation only.
 from __future__ import annotations
 
 import logging
+import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,7 +35,8 @@ from shared.constants import (
 )
 
 from . import __version__
-from .service import get_service
+from .service import BrowserCallSession, get_service, parse_booking_text
+from shared.rime_timestamps import WordTimeline
 
 logger = logging.getLogger("blackbox_audit.webui")
 
@@ -162,6 +164,8 @@ def call_advance(req: PositionRequest) -> Any:
         return get_service().advance_call(req.session_id, req.position_s)
     except KeyError as exc:
         return _not_found(exc)
+    except ValueError as exc:
+        return _bad_request(exc)
 
 
 @app.post("/api/call/barge-in")
@@ -171,6 +175,8 @@ def call_barge_in(req: PositionRequest) -> Any:
         return get_service().barge_in(req.session_id, req.position_s)
     except KeyError as exc:
         return _not_found(exc)
+    except ValueError as exc:
+        return _bad_request(exc)
 
 
 @app.post("/api/call/finish")
@@ -180,6 +186,8 @@ def call_finish(req: FinishRequest) -> Any:
         return get_service().finish_call(req.session_id, req.position_s)
     except KeyError as exc:
         return _not_found(exc)
+    except ValueError as exc:
+        return _bad_request(exc)
 
 
 @app.post("/api/call/hang-up")
@@ -202,6 +210,56 @@ def call_state(session_id: str) -> Any:
 @app.get("/api/calls")
 def recent_calls(limit: int = Query(default=20, ge=1, le=100)) -> dict[str, Any]:
     return {"calls": get_service().recent_calls(limit)}
+
+
+class VoiceTurnRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+    party_size: int | None = Field(default=None, ge=1, le=99)
+    time_str: str | None = Field(default=None, max_length=40)
+
+
+class VoiceStartRequest(StartCallRequest):
+    variant: Literal["naive", "fenced"] = "fenced"
+
+
+class VoiceEventRequest(PositionRequest):
+    action: Literal["segment", "interrupt", "complete"]
+    segment_index: int = Field(default=0, ge=0, le=2)
+
+
+@app.post("/api/voice/parse")
+def voice_parse(req: VoiceTurnRequest) -> Any:
+    return parse_booking_text(req.text, req.party_size, req.time_str)
+
+
+@app.post("/api/voice/start")
+def voice_start(req: VoiceStartRequest) -> Any:
+    service = get_service()
+    session = BrowserCallSession(
+        session_id=uuid.uuid4().hex, variant=req.variant,
+        party_size=req.party_size, time_str=req.time_str, timeline=WordTimeline([]),
+    )
+    session.start()
+    service.sessions.add(session)
+    return session.to_dict()
+
+
+@app.post("/api/voice/event")
+def voice_event(req: VoiceEventRequest) -> Any:
+    try:
+        session = get_service().sessions.get(req.session_id)
+        if not isinstance(session, BrowserCallSession):
+            raise ValueError("Voice events require a browser voice session")
+        with session.lock:
+            if req.action == "segment":
+                session.acknowledge(req.segment_index, req.position_s)
+            else:
+                session.close_browser(req.action, req.position_s)
+            return session.to_dict()
+    except KeyError as exc:
+        return _not_found(exc)
+    except ValueError as exc:
+        return _bad_request(exc)
 
 
 # ---------------------------------------------------------------------------

@@ -15,11 +15,12 @@
     <div class="brand">
       <span class="dot"></span>
       <span>BlackBox&nbsp;Audit</span>
-      <small id="modeChip">replay · no API keys</small>
+      <small id="modeChip">browser voice + offline harness</small>
     </div>
     <div class="top-spacer"></div>
     <nav class="tabs" id="tabs">
-      <button data-tab="call" class="active">Live Call</button>
+      <button data-tab="voice" class="active">Voice Studio</button>
+      <button data-tab="call">Fixture Replay</button>
       <button data-tab="compare">A/B Compare</button>
       <button data-tab="sweep">Chaos Sweep</button>
       <button data-tab="audit">DB Audit</button>
@@ -32,8 +33,12 @@
 <div class="wrap">
 
 <!-- ================= LIVE CALL ================= -->
-<section class="tab active" id="tab-call">
-  <h1>The money moment: interrupt the agent mid-confirmation</h1>
+<section class="tab active" id="tab-voice">
+  <iframe src="/mobile" title="Microphone-driven Voice Studio" allow="microphone; autoplay" style="width:100%;height:1250px;border:0;border-radius:16px"></iframe>
+  <p class="small muted">On a phone or if microphone access is blocked, <a href="/mobile">open Voice Studio directly</a>.</p>
+</section>
+<section class="tab" id="tab-call">
+  <h1>Offline fixture replay — not microphone playback</h1>
   <p class="lede">
     The agent books a table and starts reading the confirmation back. Interrupt it before it finishes
     saying <strong>“confirmed”</strong> and watch what the database does. The commit decision below is
@@ -58,12 +63,12 @@
           <div class="tl-cursor" id="tlCursor" style="display:none"></div>
         </div>
 
-        <h3>What the caller has actually heard</h3>
+        <h3>What the fixture predicts was heard</h3>
         <div class="heard-box empty" id="heardBox">— nothing spoken yet —</div>
 
         <div class="btn-row mt">
-          <button class="btn primary big" id="btnCall">📞 Place call</button>
-          <button class="btn danger big" id="btnBarge" disabled>✋ “Wait! Make it 8 PM”</button>
+          <button class="btn primary big" id="btnCall">Start fixture replay</button>
+          <button class="btn danger big" id="btnBarge" disabled>Cut replay at cursor</button>
           <button class="btn ghost" id="btnHangUp" disabled>Hang up</button>
         </div>
 
@@ -129,7 +134,7 @@
         </label>
         <label class="fld" style="display:flex;align-items:center;gap:8px;margin-top:14px">
           <input type="checkbox" id="inVoice" checked style="width:auto">
-          <span class="small">Speak out loud (browser Web Speech API — free, on-device)</span>
+          <span class="small">Optional illustrative speech (not synchronized to fixture timing)</span>
         </label>
         <div class="small muted" id="voiceSupport"></div>
       </div>

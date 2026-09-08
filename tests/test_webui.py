@@ -366,7 +366,7 @@ def test_recent_calls_feed_lists_sessions(client):
     "path,needle",
     [
         ("/", "BlackBox"),
-        ("/mobile", "BlackBox Bistro"),
+        ("/mobile", "Voice Studio"),
         ("/static/app.js", "api/call/barge-in"),
         ("/static/app.css", "--green"),
         ("/static/qr.js", "QRLite"),
@@ -413,3 +413,86 @@ def test_session_store_is_bounded():
     assert len(store.recent(100)) == 5
     with pytest.raises(KeyError):
         store.get("s0")
+
+
+# Browser speech is NOT replay: only completed segments may open the fence.
+@pytest.mark.parametrize("variant,expected", [("fenced", "ROLLED_BACK"), ("naive", "COMMITTED")])
+def test_voice_interrupt_before_audio(client, variant, expected):
+    session = client.post("/api/voice/start", json={"variant": variant, "party_size": 6, "time_str": "9:30 PM"}).json()
+    assert session["expected_committed"] is False
+    assert session["heard_text"] == ""
+    assert "6" in session["sentence"] and "9:30 PM" in session["sentence"]
+    data = client.post("/api/voice/event", json={"session_id": session["session_id"], "action": "interrupt", "position_s": .5}).json()
+    assert data["db_status"] == expected
+    assert data["mismatch"] is (variant == "naive")
+
+
+def test_voice_requires_actual_ordered_audio_segments(client):
+    session = client.post("/api/voice/start", json={}).json()
+    sid = session["session_id"]
+    def event(action, index=0, position=1):
+        return client.post("/api/voice/event", json={"session_id": sid, "action": action, "segment_index": index, "position_s": position})
+    assert event("complete").status_code == 400
+    assert event("segment", 1).status_code == 400
+    assert event("segment", 0).json()["db_status"] == "PENDING_AUDIO"
+    assert event("segment", 0).json()["acknowledged_segments"] == 1
+    assert event("segment", 1, .5).status_code == 400
+    confirmed = event("segment", 1, 2).json()
+    assert confirmed["db_status"] == "COMMITTED"
+    assert confirmed["gating_word_end_s"] == 2
+    assert confirmed["evidence"].startswith("browser")
+    event("segment", 2, 3)
+    done = event("complete", position=3).json()
+    assert done["resolved"] and not done["mismatch"]
+    assert event("interrupt", position=4).json() == done
+
+
+def test_voice_late_audio_cannot_resurrect_cancelled_booking(client):
+    sid = client.post("/api/voice/start", json={}).json()["session_id"]
+    data = {"session_id": sid, "action": "interrupt", "position_s": .1}
+    before = client.post("/api/voice/event", json=data).json()
+    data.update(action="segment", segment_index=0, position_s=1)
+    after = client.post("/api/voice/event", json=data).json()
+    assert after == before
+    assert after["db_status"] == "ROLLED_BACK"
+
+
+@pytest.mark.parametrize("path", ["advance", "finish", "barge-in"])
+def test_fixture_endpoints_cannot_fake_browser_audio(client, path):
+    sid = client.post("/api/voice/start", json={}).json()["session_id"]
+    assert client.post("/api/call/" + path, json={"session_id": sid, "position_s": 600}).status_code == 400
+    assert client.get("/api/call/" + sid).json()["db_status"] == "PENDING_AUDIO"
+
+
+@pytest.mark.parametrize("text,party,time", [
+    ("Book a table for six at nine PM", 6, "9:00 PM"),
+    ("A table for 2 at 8:30 pm please", 2, "8:30 PM"),
+    ("Party of 12 at 18:30", 12, "18:30"),
+])
+def test_voice_parser_uses_real_transcript(client, text, party, time):
+    data = client.post("/api/voice/parse", json={"text": text}).json()
+    assert data["ready"]
+    assert data["party_size"] == party
+    assert data["time_str"] == time
+
+
+def test_voice_correction_preserves_party_not_scripted_time(client):
+    data = client.post("/api/voice/parse", json={"text": "Make that ten PM instead", "party_size": 7, "time_str": "6:00 PM"}).json()
+    assert data["party_size"] == 7
+    assert data["time_str"] == "10:00 PM"
+
+
+@pytest.mark.parametrize("text", ["Hello", "Book a table", "table for 4 at 8", "for 4 at 25 PM", "cancel"])
+def test_voice_parser_asks_instead_of_inventing_booking(client, text):
+    data = client.post("/api/voice/parse", json={"text": text}).json()
+    assert not data["ready"]
+    assert data["reply"]
+
+
+def test_voice_ui_has_no_scripted_interrupt_buttons(client):
+    html = client.get("/mobile").text
+    assert "getUserMedia" in html
+    assert "SpeechRecognition" in html
+    assert "utterance.onend" in html
+    assert 'id="btnCut"' not in html
+    assert 'id="btnBarge"' not in html
