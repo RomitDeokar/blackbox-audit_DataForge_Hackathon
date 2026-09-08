@@ -220,10 +220,11 @@ class VoiceTurnRequest(BaseModel):
 
 class VoiceStartRequest(StartCallRequest):
     variant: Literal["naive", "fenced"] = "fenced"
+    previous_session_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class VoiceEventRequest(PositionRequest):
-    action: Literal["segment", "interrupt", "complete"]
+    action: Literal["segment", "interrupt", "complete", "cancel"]
     segment_index: int = Field(default=0, ge=0, le=2)
 
 
@@ -235,9 +236,22 @@ def voice_parse(req: VoiceTurnRequest) -> Any:
 @app.post("/api/voice/start")
 def voice_start(req: VoiceStartRequest) -> Any:
     service = get_service()
+    replaces = None
+    if req.previous_session_id:
+        try:
+            previous = service.sessions.get(req.previous_session_id)
+        except KeyError as exc:
+            return _not_found(exc)
+        if not isinstance(previous, BrowserCallSession) or previous.variant != req.variant:
+            return _bad_request(ValueError("Correction must use the same browser voice variant"))
+        with previous.lock:
+            if not previous.resolved_at:
+                return _bad_request(ValueError("Interrupt the previous audio before starting a correction"))
+            replaces = previous.booking_id if previous.db_status() == "COMMITTED" else previous.replaces_booking_id
     session = BrowserCallSession(
         session_id=uuid.uuid4().hex, variant=req.variant,
         party_size=req.party_size, time_str=req.time_str, timeline=WordTimeline([]),
+        replaces_booking_id=replaces,
     )
     session.start()
     service.sessions.add(session)
@@ -251,7 +265,9 @@ def voice_event(req: VoiceEventRequest) -> Any:
         if not isinstance(session, BrowserCallSession):
             raise ValueError("Voice events require a browser voice session")
         with session.lock:
-            if req.action == "segment":
+            if req.action == "cancel":
+                session.cancel_booking()
+            elif req.action == "segment":
                 session.acknowledge(req.segment_index, req.position_s)
             else:
                 session.close_browser(req.action, req.position_s)

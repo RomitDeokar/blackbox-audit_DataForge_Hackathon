@@ -295,6 +295,9 @@ class BrowserCallSession(CallSession):
     Browser acknowledgements are untrusted telemetry, not proof of human hearing.
     """
 
+    replaces_booking_id: int | None = None
+    audit_status: str | None = None
+    audit_mismatch: bool | None = None
     acknowledged: int = 0
     last_position: float = 0.0
     lock: Any = field(default_factory=threading.RLock, repr=False)
@@ -333,6 +336,8 @@ class BrowserCallSession(CallSession):
         self.advance(position)
         self.last_position = position
         self.acknowledged += 1
+        if self.expected_committed() and self.db_status() == bs.STATUS_COMMITTED and self.replaces_booking_id:
+            bs.retire_booking(self.replaces_booking_id, replacement_id=self.booking_id)
         self.log_event("browser_audio_end", f"Segment {index + 1} completed: {self.segments[index]}", at_s=position)
 
     def close_browser(self, action: str, position: float) -> None:
@@ -349,8 +354,22 @@ class BrowserCallSession(CallSession):
     def hang_up(self) -> None:
         self.close_browser("interrupt", self.last_position)
 
+    def cancel_booking(self) -> None:
+        self.close_browser("interrupt", self.last_position)
+        if self.audit_status is None:
+            self.audit_status = self.db_status()
+            self.audit_mismatch = (self.audit_status == bs.STATUS_COMMITTED) != self.expected_committed()
+        bs.retire_booking(self.booking_id)
+        if self.replaces_booking_id:
+            bs.retire_booking(self.replaces_booking_id)
+        self.log_event("user_cancel", "Caller explicitly cancelled the conversation booking")
+
     def to_dict(self) -> dict[str, Any]:
         data = super().to_dict()
+        if data["db_status"] in ("SUPERSEDED", "CANCELLED"):
+            data["mismatch"] = self.audit_mismatch if self.audit_mismatch is not None else not self.expected_committed()
+            data["audit_status"] = self.audit_status or bs.STATUS_COMMITTED
+        data["replaces_booking_id"] = self.replaces_booking_id
         data.update(mode="browser_voice", segments=self.segments,
                     acknowledged_segments=self.acknowledged,
                     evidence="browser speech-synthesis segment completion; not Rime alignment")
