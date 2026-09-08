@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BlackBox Audit — Demo Console</title>
+<meta name="description" content="Voice-agent reliability audit: commit database state only once the caller has actually heard the confirmation.">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0c10'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%233fd07a'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <span class="dot"></span>
+      <span>BlackBox&nbsp;Audit</span>
+      <small id="modeChip">replay · no API keys</small>
+    </div>
+    <div class="top-spacer"></div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="call" class="active">Live Call</button>
+      <button data-tab="compare">A/B Compare</button>
+      <button data-tab="sweep">Chaos Sweep</button>
+      <button data-tab="audit">DB Audit</button>
+      <button data-tab="mobile">Mobile</button>
+      <button data-tab="how">How It Works</button>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ================= LIVE CALL ================= -->
+<section class="tab active" id="tab-call">
+  <h1>The money moment: interrupt the agent mid-confirmation</h1>
+  <p class="lede">
+    The agent books a table and starts reading the confirmation back. Interrupt it before it finishes
+    saying <strong>“confirmed”</strong> and watch what the database does. The commit decision below is
+    made by the real <code>shared.audio_fence.AudioFence</code> state machine and written to the real
+    SQLite store — the same code the live LiveKit agent runs.
+  </p>
+
+  <div class="grid split">
+    <div>
+      <!-- playback panel -->
+      <div class="panel mb">
+        <div class="panel-head">
+          <h2>Confirmation playback</h2>
+          <span class="badge mute" id="callStateBadge">idle</span>
+        </div>
+
+        <div class="timeline-viz mb" id="tlViz">
+          <div class="tl-words" id="tlWords"></div>
+          <div class="tl-axis" id="tlAxis"></div>
+          <div class="tl-gate" id="tlGate" style="display:none"></div>
+          <div class="tl-cancel" id="tlCancel" style="display:none"></div>
+          <div class="tl-cursor" id="tlCursor" style="display:none"></div>
+        </div>
+
+        <h3>What the caller has actually heard</h3>
+        <div class="heard-box empty" id="heardBox">— nothing spoken yet —</div>
+
+        <div class="btn-row mt">
+          <button class="btn primary big" id="btnCall">📞 Place call</button>
+          <button class="btn danger big" id="btnBarge" disabled>✋ “Wait! Make it 8 PM”</button>
+          <button class="btn ghost" id="btnHangUp" disabled>Hang up</button>
+        </div>
+
+        <div class="progress"><div class="bar" id="playBar"></div></div>
+        <div class="small muted mt" id="playClock">0.000s / 0.000s</div>
+      </div>
+
+      <!-- result panel -->
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Backend state vs. the caller’s ear</h2>
+          <span class="badge mute" id="verdictBadge">awaiting call</span>
+        </div>
+        <div class="grid g3 mb">
+          <div class="stat">
+            <div class="k">DB row status</div>
+            <div class="v" id="stDb">—</div>
+            <div class="s" id="stDbSub">no booking yet</div>
+          </div>
+          <div class="stat">
+            <div class="k">Caller heard “confirmed”?</div>
+            <div class="v" id="stHeard">—</div>
+            <div class="s" id="stHeardSub">oracle, computed from timestamps</div>
+          </div>
+          <div class="stat">
+            <div class="k">Fence outcome</div>
+            <div class="v" style="font-size:15px" id="stFence">—</div>
+            <div class="s" id="stFenceSub">state machine verdict</div>
+          </div>
+        </div>
+        <div id="resultNote"></div>
+      </div>
+    </div>
+
+    <div>
+      <!-- controls -->
+      <div class="panel mb">
+        <h3>Agent variant</h3>
+        <div class="toggle-row mb" id="variantToggle">
+          <button data-variant="naive">naive (broken)</button>
+          <button data-variant="fenced" class="on-fenced">fenced (audio-gated)</button>
+        </div>
+        <div class="note small" id="variantNote"></div>
+
+        <hr class="sep">
+
+        <h3>Booking request</h3>
+        <label class="fld">
+          <span class="lbl">Party size</span>
+          <input type="number" id="inParty" value="4" min="1" max="99">
+        </label>
+        <label class="fld">
+          <span class="lbl">Time</span>
+          <input type="text" id="inTime" value="7:00 PM">
+        </label>
+
+        <hr class="sep">
+
+        <h3>Playback options</h3>
+        <label class="fld">
+          <span class="lbl">Speed <span class="mono" id="speedVal">1.0×</span></span>
+          <input type="range" id="inSpeed" min="0.25" max="2" step="0.25" value="1">
+        </label>
+        <label class="fld" style="display:flex;align-items:center;gap:8px;margin-top:14px">
+          <input type="checkbox" id="inVoice" checked style="width:auto">
+          <span class="small">Speak out loud (browser Web Speech API — free, on-device)</span>
+        </label>
+        <div class="small muted" id="voiceSupport"></div>
+      </div>
+
+      <!-- event log -->
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Fence event log</h2>
+          <span class="small muted" id="latencyChip"></span>
+        </div>
+        <div class="events scroll short" id="eventLog">
+          <div class="small muted">Events appear here once a call starts.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= A/B COMPARE ================= -->
+<section class="tab" id="tab-compare">
+  <h1>Same interruption, both agents, side by side</h1>
+  <p class="lede">
+    Pick the instant the caller barges in, then run it through both variants at once. Both write to the
+    same SQLite store through the same module, so any difference in the result is caused purely by the
+    commit-gating policy.
+  </p>
+
+  <div class="panel mb">
+    <div class="grid g2">
+      <div>
+        <label class="fld">
+          <span class="lbl">Barge-in offset relative to the end of “confirmed” — <span class="mono" id="cmpOffsetVal">-200 ms</span></span>
+          <input type="range" id="cmpOffset" min="-500" max="500" step="10" value="-200">
+        </label>
+        <div class="small muted" id="cmpPlanNote"></div>
+      </div>
+      <div>
+        <h3>Caller hears</h3>
+        <div class="heard-box" id="cmpHeard">—</div>
+      </div>
+    </div>
+    <div class="btn-row mt">
+      <button class="btn primary" id="btnCompare">Run both variants at this offset</button>
+      <button class="btn ghost" id="btnCompareSweep">Sweep both across ±500 ms</button>
+    </div>
+  </div>
+
+  <div class="vs mb">
+    <div class="variant-card naive">
+      <h2><span class="badge err">naive</span> commit on tool call</h2>
+      <div class="grid g2 mb">
+        <div class="stat">
+          <div class="k">DB status</div>
+          <div class="v" id="cmpNaiveDb" style="font-size:19px">—</div>
+        </div>
+        <div class="stat">
+          <div class="k">Mismatch</div>
+          <div class="v" id="cmpNaiveMm" style="font-size:19px">—</div>
+        </div>
+      </div>
+      <div class="small muted" id="cmpNaiveNote">Commits the instant the LLM tool call executes.</div>
+    </div>
+    <div class="vs-mid">VS</div>
+    <div class="variant-card fenced">
+      <h2><span class="badge ok">fenced</span> commit on confirmed audio</h2>
+      <div class="grid g2 mb">
+        <div class="stat">
+          <div class="k">DB status</div>
+          <div class="v" id="cmpFencedDb" style="font-size:19px">—</div>
+        </div>
+        <div class="stat">
+          <div class="k">Mismatch</div>
+          <div class="v" id="cmpFencedMm" style="font-size:19px">—</div>
+        </div>
+      </div>
+      <div class="small muted" id="cmpFencedNote">Creates PENDING_AUDIO; commits only once “confirmed” has fully played.</div>
+    </div>
+  </div>
+
+  <div id="cmpSweepOut"></div>
+</section>
+
+<!-- ================= CHAOS SWEEP ================= -->
+<section class="tab" id="tab-sweep">
+  <h1>The acceptance test: 606 real trials</h1>
+  <p class="lede">
+    Interrupt the confirmation at every offset from −500 ms to +500 ms in 10 ms steps, three runs each —
+    303 trials per variant. Each trial writes to the real store and is graded against an independent
+    oracle computed straight from the Rime timestamps, never from the fence itself. Runs offline in
+    about a second and makes zero API calls.
+  </p>
+
+  <div class="panel mb">
+    <div class="btn-row">
+      <button class="btn primary big" id="btnAcceptance">▶ Run full acceptance test (606 trials)</button>
+      <button class="btn" id="btnQuickSweep">Quick sweep (fenced, 1 run/offset)</button>
+      <button class="btn ghost" id="btnLoadSummary">Load last results</button>
+      <span id="sweepSpin"></span>
+    </div>
+  </div>
+
+  <div id="sweepVerdict"></div>
+  <div class="grid g4 mb" id="sweepStats"></div>
+
+  <div class="panel mb" id="chartPanel" style="display:none">
+    <div class="panel-head">
+      <h2>Mismatch rate vs. barge-in offset</h2>
+      <span class="small muted">rendered by <code>reporting/chart.py</code></span>
+    </div>
+    <div class="chart-wrap" id="chartWrap"></div>
+  </div>
+
+  <div class="panel flush" id="sweepTablePanel" style="display:none">
+    <div style="padding:16px 18px 0"><h2>Per-target breakdown</h2></div>
+    <div class="scroll"><table class="data" id="sweepTable"></table></div>
+  </div>
+</section>
+
+<!-- ================= DB AUDIT ================= -->
+<section class="tab" id="tab-audit">
+  <h1>Database audit trail</h1>
+  <p class="lede">
+    A direct read of the demo SQLite store. Every phantom booking the naive agent creates is a real row
+    here — a table double-booked, a slot the caller never agreed to. The fenced agent’s rollbacks are
+    equally visible in the transaction log.
+  </p>
+
+  <div class="btn-row mb">
+    <button class="btn" id="btnRefreshDb">Refresh</button>
+    <button class="btn danger ghost" id="btnResetDb">Reset demo database</button>
+    <span class="small muted" id="dbPathChip"></span>
+  </div>
+
+  <div class="grid g4 mb" id="dbStats"></div>
+
+  <div class="grid g2">
+    <div class="panel flush">
+      <div style="padding:16px 18px 0"><h2>bookings</h2></div>
+      <div class="scroll"><table class="data" id="tblBookings"></table></div>
+    </div>
+    <div class="panel flush">
+      <div style="padding:16px 18px 0"><h2>transaction_log</h2></div>
+      <div class="scroll"><table class="data" id="tblLog"></table></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= MOBILE ================= -->
+<section class="tab" id="tab-mobile">
+  <h1>Mobile integration</h1>
+  <p class="lede">
+    Scan the code to run the caller experience on a phone. The phone view is a real client of this API:
+    it plays the confirmation with the device’s own speech synthesiser, reports playback position back to
+    the server, and the same fence decides the commit.
+  </p>
+
+  <div class="grid split mb">
+    <div class="panel">
+      <h2>Open the caller view on your phone</h2>
+      <div class="grid g2 mt">
+        <div class="center">
+          <div class="qr-box" id="qrBox"></div>
+          <div class="small muted mt">Scan with the camera app</div>
+        </div>
+        <div>
+          <h3>Direct link</h3>
+          <input type="text" id="mobileUrl" readonly>
+          <div class="btn-row mt">
+            <button class="btn" id="btnCopyUrl">Copy link</button>
+            <a class="btn ghost" id="btnOpenMobile" href="/mobile" target="_blank" style="text-decoration:none;display:inline-block">Open in new tab</a>
+          </div>
+          <div class="note small mt">
+            Served over <strong>HTTPS</strong>, which is required for microphone access and for iOS
+            speech playback. That is cause&nbsp;#1 in <code>docs/MOBILE_SETUP.md</code>.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Live call feed</h2>
+      <p class="small muted">Calls placed from any device appear here — put this on the big screen while a judge uses the phone.</p>
+      <div class="btn-row mb">
+        <button class="btn" id="btnFeedToggle">Start auto-refresh</button>
+        <span class="small muted" id="feedChip">idle</span>
+      </div>
+      <div class="scroll short"><table class="data" id="tblFeed"></table></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Why the real LiveKit path breaks on mobile — and what this demo replaces</h2>
+      <span class="badge info">from docs/MOBILE_SETUP.md</span>
+    </div>
+    <div class="note mb">
+      <strong>It is not a Rime problem.</strong> Rime runs inside the agent worker; the phone never talks
+      to Rime directly. What breaks on mobile is the LiveKit client path — and when that breaks the agent
+      never hears you, so it never speaks, so it <em>looks</em> like TTS is broken.
+    </div>
+    <div class="scroll short"><table class="data" id="tblMobileCauses"></table></div>
+    <div class="note ok mt">
+      <strong>This demo sidesteps all six.</strong> There is no WebRTC leg and no provider key: the phone
+      talks plain HTTPS to this server and speaks through its own on-device synthesiser, paced by the
+      cached Rime word timeline. The fencing decision is unchanged, so the thing being demonstrated is
+      still the real thing.
+    </div>
+  </div>
+</section>
+
+<!-- ================= HOW IT WORKS ================= -->
+<section class="tab" id="tab-how">
+  <h1>How it works</h1>
+  <p class="lede">
+    The claim: a voice agent that gates database writes behind <em>confirmed audio playback</em> — not
+    just LLM tool-call completion — will never commit a state change the caller did not actually hear,
+    even under hundreds of rapid mid-sentence interruptions. A naively implemented agent will.
+  </p>
+
+  <div class="grid g2 mb">
+    <div class="panel">
+      <h2>The two commit policies</h2>
+      <div class="scroll short"><table class="data">
+        <thead><tr><th>Variant</th><th>Commit rule</th><th>Result under barge-in</th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge err">naive</span></td><td>Commit the instant the LLM tool call executes</td><td>Phantom bookings</td></tr>
+          <tr><td><span class="badge ok">fenced</span></td><td>Create PENDING_AUDIO; commit only when Rime’s word-level timestamps prove “confirmed” fully played; roll back on cancellation</td><td>Zero state mismatches</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div class="panel">
+      <h2>Fence state machine</h2>
+      <div class="scroll short"><table class="data" id="tblFenceStates"></table></div>
+    </div>
+  </div>
+
+  <div class="panel mb">
+    <h2>Why the offset is keyed to the timestamp stream</h2>
+    <p class="small" style="color:var(--text-2);max-width:80ch">
+      “Cancel 120 ms after the word ‘confirmed’ finished playing” is a statement about the caller’s ear.
+      “Cancel 2.4 s after the tool call” is a statement about a network, a jitter buffer and an event
+      loop — it would smear the measurement across ~100 ms of noise, wider than the effect being
+      measured. Every barge-in in this demo and in the sweep is therefore scheduled off
+      <code>gating_word_end + offset_ms</code>.
+    </p>
+    <div class="note warn" id="fixtureNote"></div>
+  </div>
+
+  <div class="grid g2 mb">
+    <div class="panel">
+      <h2>Provider keys</h2>
+      <p class="small muted">This demo needs none of these. They are listed so you can see what the live path would use.</p>
+      <div class="scroll short"><table class="data" id="tblProviders"></table></div>
+    </div>
+    <div class="panel">
+      <h2>Word timeline (ground truth)</h2>
+      <div class="scroll short"><table class="data" id="tblWords"></table></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>API surface</h2>
+    <p class="small muted">Everything the UI does is available as JSON — full schema at <a href="/api/docs" target="_blank">/api/docs</a>.</p>
+    <div class="scroll short"><table class="data" id="tblApi"></table></div>
+  </div>
+</section>
+
+</div>
+
+<script src="/static/qr.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
