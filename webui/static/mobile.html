@@ -30,12 +30,13 @@
 <div class="transcript" id="transcript" role="log" aria-live="polite"><p class="empty">Your actual words and the agent’s responses appear here.</p></div>
 <div class="interim" id="interim" aria-live="polite"></div>
 <form class="form" id="form"><input id="text" aria-label="Message to booking agent" placeholder="Or type your own request…" maxlength="500" autocomplete="off" required><button class="btn" type="submit">Send</button></form>
-<p class="caption">Free browser speech + a small booking parser. Ask for party size and time with AM/PM. This is not a general-purpose LLM.</p>
+<p class="caption">API-free booking dialogue with spoken replies. Correct either detail naturally, for example “six people instead” or “actually eight thirty PM”. This is a booking assistant, not a general-purpose LLM.</p>
 <details><summary>Microphone and playback settings</summary><label for="sensitivity">Barge-in threshold (raise in noisy rooms)</label><input type="range" id="sensitivity" min="0.015" max="0.15" step="0.005" value="0.045"><label for="rate">Agent speech speed</label><input type="range" id="rate" min="0.6" max="1.2" step="0.1" value="0.8"><p>Chrome desktop/Android recommended. Browser speech recognition may send audio to its provider. Microphone permission and HTTPS are required. If unsupported, typed input still uses the same backend and audible playback.</p></details>
 </section>
 <aside class="audit">
 <section class="card"><div class="cardhead"><h2>Live backend evidence</h2><span class="pill" id="sessionId">No booking</span></div>
 <div class="metrics"><div class="metric"><div class="label">SQLite row</div><div class="value" id="db">—</div></div><div class="metric"><div class="label">Confirmation completed</div><div class="value" id="heard">—</div></div><div class="metric"><div class="label">Fence state</div><div class="value" id="fence">—</div></div><div class="metric"><div class="label">Acknowledged segments</div><div class="value" id="segments">0 / 3</div></div></div>
+<div class="evidence"><div class="label">Current understood request</div><div id="intent">No details yet.</div></div>
 <div class="evidence"><div class="label">Completed audio only</div><div id="audioText">No playback acknowledged yet.</div></div>
 <div class="verdict" id="verdict">Start a conversation to inspect the real transaction. Changing the variant never changes the data layer.</div>
 <div class="history" id="history"></div>
@@ -52,20 +53,22 @@ const $ = id => document.getElementById(id);
 let session=null, variant='fenced', context={}, mic=null, audioContext=null, recognition=null;
 let listening=false, speaking=false, frame=null, voiceEpoch=0, started=0, stopping=Promise.resolve();
 let pendingTurn=Promise.resolve(), acknowledgement=Promise.resolve(), utterance=null, stopUtterance=null;
-let processing=false, connected=false, ending=false;
+let processing=false, connected=false, ending=false, turnRevision=0, finalTimer=null, finalText='';
 const saved=new Set();
 async function api(path, data) {
- const r=await fetch(path, data===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+ const opts=data===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)};
+ const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),15000);let r;
+ try{r=await fetch(path,{...opts,signal:controller.signal});}finally{clearTimeout(timer);}
  const body=await r.json(); if(!r.ok||body.error) throw Error(body.error || (typeof body.detail==='string'?body.detail:'Request failed: '+r.status)); return body;
 }
 function error(e){$('error').style.display='block';$('error').textContent=e.message||String(e);}
 function status(text,sub){$('status').textContent=text;if(sub!==undefined)$('substatus').textContent=sub;}
 function message(who,text){const root=$('transcript');if(root.querySelector('.empty'))root.textContent='';const el=document.createElement('div');el.className='message '+(who==='You'?'you':'');const label=document.createElement('small');label.textContent=who;el.append(label,document.createTextNode(text));root.append(el);while(root.children.length>60)root.firstChild.remove();root.scrollTop=root.scrollHeight;return el;}
 function render(d){
- session=d;$('sessionId').textContent='row #'+d.booking_id;$('db').textContent=d.db_status;$('db').className='value '+(d.db_status==='COMMITTED'?'good':d.db_status==='ROLLED_BACK'?'bad':'');
+ session=d;$('intent').textContent=d.party_size+' guests · '+d.time_str;$('sessionId').textContent='row #'+d.booking_id;$('db').textContent=d.db_status;$('db').className='value '+(d.db_status==='COMMITTED'?'good':d.db_status==='ROLLED_BACK'?'bad':'');
  $('heard').textContent=d.expected_committed?'Yes':'Not yet';$('heard').className='value '+(d.expected_committed?'good':'');$('fence').textContent=d.fence_state||'No fence';$('segments').textContent=d.acknowledged_segments+' / 3';$('audioText').textContent=d.heard_text||'No complete audio segment acknowledged.';
  $('log').textContent='';for(const e of d.events){const line=document.createElement('div');line.textContent=(e.at_s===null?'—':e.at_s.toFixed(3)+'s')+' · '+e.detail;$('log').append(line);}$('log').scrollTop=$('log').scrollHeight;
- $('verdict').textContent=!d.resolved?(d.variant==='naive'?'Already committed before confirmation audio. Speak now to expose the phantom booking.':'Pending. Audio segments are acknowledged only after actual synthesis completion.'):(d.mismatch?'PHANTOM BOOKING: committed without completed confirmation audio.':d.db_status==='ROLLED_BACK'?'Rolled back. No booking survives the unheard confirmation.':'Committed after the confirmation segment completed.');
+ $('verdict').textContent=['CANCELLED','SUPERSEDED'].includes(d.db_status)?'Booking '+d.db_status.toLowerCase()+'. Original audio evidence remains in the audit.':!d.resolved?(d.variant==='naive'?'Already committed before confirmation audio. Speak now to expose the phantom booking.':'Pending. Audio segments are acknowledged only after actual synthesis completion.'):(d.mismatch?'PHANTOM BOOKING: committed without completed confirmation audio.':d.db_status==='ROLLED_BACK'?'Rolled back. No booking survives the unheard confirmation.':'Committed after the confirmation segment completed.');
  if(d.resolved&&!saved.has(d.session_id)){saved.add(d.session_id);const line=document.createElement('div');line.textContent='#'+d.booking_id+' · '+d.party_size+' guests · '+d.time_str+' · '+d.db_status+(d.mismatch?' · MISMATCH':'');$('history').prepend(line);while($('history').children.length>8)$('history').lastChild.remove();}
 }
 function now(){return Math.max(.001,(performance.now()-started)/1000);}
@@ -73,7 +76,7 @@ function hush(){voiceEpoch++;speaking=false;if(stopUtterance){stopUtterance(fals
 function interrupt(reason){
  if(!speaking && (!session||session.resolved))return stopping;
  const old=session,position=now();hush();status('Listening',reason||'Speak your correction.');
- if(old&&!old.resolved){stopping=stopping.then(()=>acknowledgement).then(()=>api('/api/voice/event',{session_id:old.session_id,action:'interrupt',position_s:position})).then(d=>{if(session&&session.session_id===d.session_id)render(d);}).catch(e=>{error(e);throw e;});}
+ if(old&&!old.resolved){stopping=stopping.catch(()=>{}).then(()=>acknowledgement.catch(()=>{})).then(()=>api('/api/voice/event',{session_id:old.session_id,action:'interrupt',position_s:position})).then(d=>{if(session&&session.session_id===d.session_id)render(d);}).catch(e=>{error(e);throw e;});}
  return stopping;
 }
 function speakSegment(text,epoch){
@@ -81,6 +84,7 @@ function speakSegment(text,epoch){
   if(epoch!==voiceEpoch)return resolve(false);
   if(!('speechSynthesis'in window))return reject(Error('This browser cannot play speech. Use Chrome or Safari; no silent playback is scored.'));
   utterance=new SpeechSynthesisUtterance(text);utterance.lang='en-US';utterance.rate=Number($('rate').value);
+  const voices=speechSynthesis.getVoices();const local=voices.find(v=>v.lang.startsWith('en')&&v.localService)||voices.find(v=>v.lang.startsWith('en'));if(local)utterance.voice=local;
   stopUtterance=resolve;let began=false;
   const timeout=setTimeout(()=>{if(!began&&epoch===voiceEpoch){speechSynthesis.cancel();reject(Error('Audio playback did not start. Tap Enable microphone or try Chrome.'));}},10000);
   utterance.onstart=()=>{began=true;clearTimeout(timeout);};
@@ -88,6 +92,10 @@ function speakSegment(text,epoch){
   utterance.onerror=e=>{clearTimeout(timeout);stopUtterance=null;if(epoch!==voiceEpoch||e.error==='canceled'||e.error==='interrupted')resolve(false);else reject(Error('Speech playback failed: '+e.error));};
   speechSynthesis.speak(utterance);
  });
+}
+async function reply(text){
+ const epoch=++voiceEpoch;speaking=true;started=performance.now();message('Agent',text);status('Agent speaking');$('end').disabled=false;
+ try{await speakSegment(text,epoch);}catch(e){error(e);}finally{if(epoch===voiceEpoch){speaking=false;status(listening?'Listening':'Your turn','Speak or type your next message.');}}
 }
 async function play(d){
  const epoch=++voiceEpoch;started=performance.now();speaking=true;status('Agent speaking','Speak over the agent to interrupt — headphones recommended.');
@@ -104,7 +112,7 @@ async function play(d){
   speaking=false;status(listening?'Listening':'Ready for another request','The completed booking remains visible in the audit.');
  }catch(e){error(e);await interrupt('Playback failed; closing the pending transaction.').catch(()=>{});}
 }
-async function turn(text){
+async function turn(text,revision){
  if(ending)return;
  if(!connected)throw Error('Backend is not connected. Please reload when the harness is available.');
  processing=true;
@@ -112,14 +120,21 @@ async function turn(text){
   await interrupt('Processing your words…');await stopping;
   message('You',text);$('interim').textContent='';status('Understanding your request');
   const parsed=await api('/api/voice/parse',{text,...context});
-  context={party_size:parsed.party_size||context.party_size||null,time_str:parsed.time_str||context.time_str||null};
-  if(!parsed.ready){if(parsed.cancel)context={};message('Agent',parsed.reply);status('Your turn',parsed.reply);return;}
-  const d=await api('/api/voice/start',{variant,party_size:parsed.party_size,time_str:parsed.time_str});
-  render(d);$('end').disabled=false;play(d);
+  context={party_size:parsed.party_size??null,time_str:parsed.time_str??null};
+  $('intent').textContent=(context.party_size?context.party_size+' guests':'Party size needed')+' · '+(context.time_str||'Time needed');
+  if(parsed.cancel){if(session)render(await api('/api/voice/event',{session_id:session.session_id,action:'cancel',position_s:now()}));context={};session=null;}
+  if(revision!==turnRevision||ending)return;
+  if(!parsed.ready){reply(parsed.reply);return;}
+  const previous=session;
+  const separate=/\b(new|another|separate)\s+(booking|table|reservation)\b/i.test(text);
+  const d=await api('/api/voice/start',{variant,...context,previous_session_id:!separate&&previous&&previous.variant===variant?previous.session_id:null});
+  render(d);$('end').disabled=false;
+  if(revision!==turnRevision||ending){await interrupt('Newer correction received.');return;}
+  play(d);
  }finally{processing=false;}
 }
-function submit(text){if(!text.trim())return;pendingTurn=pendingTurn.then(()=>turn(text.trim())).catch(e=>{error(e);status('Please try again');});}
-function primeAudio(){if('speechSynthesis'in window){const u=new SpeechSynthesisUtterance('');speechSynthesis.speak(u);}}
+function submit(text){if(!text.trim())return;$('error').style.display='none';const revision=++turnRevision;pendingTurn=pendingTurn.then(()=>turn(text.trim(),revision)).catch(e=>{error(e);status('Please try again','The message was not completed. No silent playback is scored.');});}
+function primeAudio(){if('speechSynthesis'in window&&!speaking){speechSynthesis.getVoices();const u=new SpeechSynthesisUtterance('Ready');u.volume=0;speechSynthesis.speak(u);}}
 async function enableMic(){
  ending=false;$('error').style.display='none';primeAudio();$('start').disabled=true;
  try{
@@ -131,19 +146,19 @@ async function enableMic(){
   const analyzer=audioContext.createAnalyser();analyzer.fftSize=1024;audioContext.createMediaStreamSource(mic).connect(analyzer);
   const samples=new Float32Array(analyzer.fftSize);let onset=0;
   listening=true;recognition=new SR();recognition.lang='en-US';recognition.continuous=true;recognition.interimResults=true;
-  recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const text=e.results[i][0].transcript;if(speaking)interrupt('Voice detected — audio stopped.').catch(error);if(e.results[i].isFinal)submit(text);else interim+=text;}$('interim').textContent=interim;};
+  recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const text=e.results[i][0].transcript;if(speaking)interrupt('Voice detected — audio stopped.').catch(error);clearTimeout(finalTimer);if(e.results[i].isFinal)finalText+=' '+text;else interim+=text;}$('interim').textContent=(finalText+' '+interim).trim();if(finalText&&!interim)finalTimer=setTimeout(()=>{const text=finalText;finalText='';submit(text);},550);};
   recognition.onerror=e=>{if(e.error==='no-speech'||e.error==='aborted')return;error(Error('Speech recognition: '+e.error+'. You can still type below.'));if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error))disableMic();};
   recognition.onend=()=>{if(listening)setTimeout(()=>{if(listening)try{recognition.start();}catch(e){error(e);}},350);};
   recognition.start();
   function meter(){if(!listening)return;analyzer.getFloatTimeDomainData(samples);const rms=Math.sqrt(samples.reduce((sum,v)=>sum+v*v,0)/samples.length);$('level').style.width=Math.min(100,rms*700)+'%';if(speaking&&rms>Number($('sensitivity').value)){if(!onset)onset=performance.now();if(performance.now()-onset>100){interrupt('Microphone barge-in detected.').catch(error);onset=0;}}else onset=0;frame=requestAnimationFrame(meter);}
-  meter();$('orb').classList.add('live');$('end').disabled=false;$('start').textContent='Microphone enabled';status('Listening','Tell me the party size and booking time, including AM or PM.');
+  meter();$('orb').classList.add('live');$('end').disabled=false;$('start').textContent='Microphone enabled';status('Listening','Tell me the party size and booking time, including AM or PM.');if(!session)reply('Hello! Welcome to BlackBox Bistro. How many people and what time would you like your table?');
  }catch(e){disableMic();error(e);status('Typed input available','Microphone could not start. No booking has been created.');}
 }
-function disableMic(){listening=false;if(recognition){recognition.onend=null;recognition.abort();recognition=null;}if(mic){mic.getTracks().forEach(t=>t.stop());mic=null;}if(audioContext){audioContext.close();audioContext=null;}cancelAnimationFrame(frame);$('level').style.width='0';$('orb').classList.remove('live');$('start').disabled=false;$('start').textContent='Enable microphone';}
+function disableMic(){listening=false;clearTimeout(finalTimer);finalText='';if(recognition){recognition.onend=null;recognition.abort();recognition=null;}if(mic){mic.getTracks().forEach(t=>t.stop());mic=null;}if(audioContext){audioContext.close();audioContext=null;}cancelAnimationFrame(frame);$('level').style.width='0';$('orb').classList.remove('live');$('start').disabled=false;$('start').textContent='Enable microphone';}
 $('start').onclick=enableMic;
-$('end').onclick=async()=>{ending=true;disableMic();await pendingTurn;await interrupt('Session ended.').catch(error);$('end').disabled=true;status('Session ended','Microphone released. Audit evidence is preserved.');};
+$('end').onclick=async()=>{ending=true;++turnRevision;disableMic();hush();await pendingTurn;await interrupt('Session ended.').catch(error);context={};session=null;$('end').disabled=true;status('Session ended','Microphone released. Confirmed bookings and audit evidence are preserved.');};
 $('form').onsubmit=e=>{e.preventDefault();ending=false;primeAudio();const text=$('text').value;$('text').value='';if(speaking)interrupt('Typed interruption received.').catch(error);submit(text);};
-for(const button of $('variants').children)button.onclick=()=>{if(speaking||processing){error(Error('End the current turn before switching variants.'));return;}variant=button.dataset.v;for(const b of $('variants').children){b.classList.toggle('selected',b===button);b.setAttribute('aria-pressed',String(b===button));}$('policy').textContent=variant==='naive'?'Deliberately broken baseline: the same SQLite store commits before audio.':'The original AudioFence waits for acknowledged confirmation audio.';};
+for(const button of $('variants').children)button.onclick=()=>{if(speaking||processing){error(Error('End the current turn before switching variants.'));return;}variant=button.dataset.v;session=null;context={};for(const b of $('variants').children){b.classList.toggle('selected',b===button);b.setAttribute('aria-pressed',String(b===button));}$('policy').textContent=variant==='naive'?'Deliberately broken baseline: the same SQLite store commits before audio.':'The original AudioFence waits for acknowledged confirmation audio.';};
 window.addEventListener('pagehide',()=>{if(session&&!session.resolved){navigator.sendBeacon('/api/voice/event',new Blob([JSON.stringify({session_id:session.session_id,action:'interrupt',position_s:now()})],{type:'application/json'}));}hush();disableMic();});
 api('/api/health').then(()=>{connected=true;$('connection').textContent='Python harness connected';}).catch(e=>{$('connection').textContent='Backend unavailable';error(e);});
 })();
