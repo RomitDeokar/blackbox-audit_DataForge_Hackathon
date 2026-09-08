@@ -496,3 +496,106 @@ def test_voice_ui_has_no_scripted_interrupt_buttons(client):
     assert "utterance.onend" in html
     assert 'id="btnCut"' not in html
     assert 'id="btnBarge"' not in html
+
+
+@pytest.mark.parametrize("text,party,time", [
+    ("six people instead", 6, "7:00 PM"),
+    ("make it six people", 6, "7:00 PM"),
+    ("actually eight thirty PM", 4, "8:30 PM"),
+    ("7 PM, actually 9 PM", 4, "9:00 PM"),
+    ("8 PM instead of 7 PM", 4, "8:00 PM"),
+    ("8 PM, not 7 PM", 4, "8:00 PM"),
+    ("not 7 PM, 8 PM", 4, "8:00 PM"),
+    ("for twenty-five people at nine PM", 25, "9:00 PM"),
+    ("at 8 in the evening", 4, "8:00 PM"),
+    ("at noon", 4, "12:00 PM"),
+    ("for 8 PM", 4, "8:00 PM"),
+])
+def test_natural_corrections_choose_latest_intended_slots(client, text, party, time):
+    d = client.post("/api/voice/parse", json={"text": text, "party_size": 4, "time_str": "7:00 PM"}).json()
+    assert d["ready"]
+    assert (d["party_size"], d["time_str"]) == (party, time)
+
+
+def test_ambiguous_correction_retains_new_hour_not_old_booking(client):
+    d = client.post("/api/voice/parse", json={"text": "change it to 8", "party_size": 4, "time_str": "7:00 PM"}).json()
+    assert not d["ready"] and d["time_str"] == "8:00"
+    d = client.post("/api/voice/parse", json={"text": "PM", "party_size": d["party_size"], "time_str": d["time_str"]}).json()
+    assert d["ready"] and d["time_str"] == "8:00 PM"
+
+
+def test_greeting_and_partial_dialogue(client):
+    ctx = {}
+    for text, ready in [("hello", False), ("six", False), ("at eight", False), ("PM", True)]:
+        d = client.post("/api/voice/parse", json={"text": text, **ctx}).json()
+        assert d["ready"] is ready
+        ctx = {key: d.get(key) for key in ("party_size", "time_str")}
+    assert ctx == {"party_size": 6, "time_str": "8:00 PM"}
+
+
+@pytest.mark.parametrize("text", ["thank you", "yes", "wait", "stop"])
+def test_acknowledgements_do_not_create_duplicate_bookings(client, text):
+    d = client.post("/api/voice/parse", json={"text": text, "party_size": 4, "time_str": "7:00 PM"}).json()
+    assert not d["ready"]
+    assert not d.get("cancel")
+
+
+def _voice_event(client, session, action, index=0):
+    response = client.post("/api/voice/event", json={"session_id": session["session_id"], "action": action,
+                                                     "segment_index": index, "position_s": index + 1})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _voice_confirm(client, session):
+    for index in range(3):
+        session = _voice_event(client, session, "segment", index)
+    return _voice_event(client, session, "complete", 2)
+
+
+def test_corrected_booking_replaces_old_only_after_corrected_audio(client):
+    first = _voice_confirm(client, client.post("/api/voice/start", json={}).json())
+    second = client.post("/api/voice/start", json={"previous_session_id": first["session_id"], "time_str": "8:30 PM", "party_size": 6}).json()
+    assert bs.get_booking(first["booking_id"])["status"] == "COMMITTED"
+    assert second["db_status"] == "PENDING_AUDIO"
+    second = _voice_confirm(client, second)
+    assert second["db_status"] == "COMMITTED"
+    assert (bs.get_booking(second["booking_id"])["party_size"], second["time_str"]) == (6, "8:30 PM")
+    old = client.get("/api/call/" + first["session_id"]).json()
+    assert old["db_status"] == "SUPERSEDED" and not old["mismatch"]
+    assert any(e["event_type"] == f'SUPERSEDED_BY_{second["booking_id"]}' for e in old["transaction_log"])
+
+
+def test_interrupted_correction_chain_does_not_lose_previous_booking(client):
+    first = _voice_confirm(client, client.post("/api/voice/start", json={}).json())
+    second = client.post("/api/voice/start", json={"previous_session_id": first["session_id"], "time_str": "8:00 PM"}).json()
+    second = _voice_event(client, second, "interrupt")
+    assert bs.get_booking(first["booking_id"])["status"] == "COMMITTED"
+    third = client.post("/api/voice/start", json={"previous_session_id": second["session_id"], "time_str": "9:00 PM"}).json()
+    _voice_confirm(client, third)
+    assert bs.get_booking(first["booking_id"])["status"] == "SUPERSEDED"
+    assert bs.get_booking(second["booking_id"])["status"] == "ROLLED_BACK"
+
+
+@pytest.mark.parametrize("variant,phantom", [("fenced", False), ("naive", True)])
+def test_explicit_cancel_preserves_original_audio_verdict(client, variant, phantom):
+    first = client.post("/api/voice/start", json={"variant": variant}).json()
+    cancelled = _voice_event(client, first, "cancel")
+    assert cancelled["db_status"] in ("CANCELLED", "ROLLED_BACK")
+    assert cancelled["mismatch"] is phantom
+    late = _voice_event(client, first, "segment")
+    assert late["db_status"] == cancelled["db_status"]
+
+
+def test_correction_rejects_unclosed_previous_audio(client):
+    first = client.post("/api/voice/start", json={}).json()
+    response = client.post("/api/voice/start", json={"previous_session_id": first["session_id"]})
+    assert response.status_code == 400
+
+
+def test_retiring_booking_requires_confirmed_replacement(client):
+    first = client.post("/api/voice/start", json={}).json()
+    second = client.post("/api/voice/start", json={}).json()
+    with pytest.raises(bs.IllegalTransitionError):
+        bs.retire_booking(first["booking_id"], replacement_id=second["booking_id"])
+    assert bs.get_booking(first["booking_id"])["status"] == "PENDING_AUDIO"
