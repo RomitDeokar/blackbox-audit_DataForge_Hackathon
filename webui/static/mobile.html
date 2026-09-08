@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0a0c10">
+<title>BlackBox Bistro — Call</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0c10'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%233fd07a'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #0a0c10;
+  --panel: #141922;
+  --panel-2: #1a2029;
+  --line: #242c38;
+  --line-2: #313b4a;
+  --text: #e6ebf2;
+  --text-2: #9aa6b8;
+  --text-3: #66717f;
+  --green: #2e9e5b;
+  --green-2: #3fd07a;
+  --red: #d64545;
+  --red-2: #ff6b6b;
+  --amber: #d99a2b;
+  --blue: #4a90d9;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px; line-height: 1.45;
+  min-height: 100vh;
+  overscroll-behavior: none;
+}
+.shell {
+  max-width: 520px; margin: 0 auto;
+  padding: env(safe-area-inset-top) 16px calc(20px + env(safe-area-inset-bottom));
+}
+header {
+  padding: 18px 0 14px; display: flex; align-items: center; gap: 10px;
+}
+header .dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--green-2); box-shadow: 0 0 10px var(--green-2);
+}
+header .name { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
+header .sub { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
+header a.back {
+  margin-left: auto; color: var(--text-3); text-decoration: none;
+  font-size: 12px; font-family: var(--mono);
+  border: 1px solid var(--line); padding: 5px 10px; border-radius: 6px;
+}
+
+/* variant switch */
+.switch { display: flex; gap: 8px; margin-bottom: 14px; }
+.switch button {
+  flex: 1; background: var(--panel); border: 1px solid var(--line-2);
+  color: var(--text-2); padding: 11px 6px; border-radius: 9px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  font-family: inherit; transition: all 0.14s;
+}
+.switch button small { display: block; font-weight: 400; font-size: 10.5px; opacity: 0.8; margin-top: 2px; }
+.switch button.on-naive { background: rgba(214,69,69,0.2); border-color: var(--red); color: var(--red-2); }
+.switch button.on-fenced { background: rgba(46,158,91,0.2); border-color: var(--green); color: var(--green-2); }
+
+/* phone screen */
+.screen {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 16px; padding: 18px 16px; margin-bottom: 14px;
+}
+.callee { text-align: center; margin-bottom: 16px; }
+.avatar {
+  width: 68px; height: 68px; border-radius: 50%; margin: 0 auto 10px;
+  background: linear-gradient(140deg, #1f3a2b, #14202a);
+  border: 1px solid var(--line-2);
+  display: flex; align-items: center; justify-content: center; font-size: 29px;
+}
+.callee .who { font-weight: 700; font-size: 17px; }
+.callee .st { font-size: 12.5px; color: var(--text-3); font-family: var(--mono); margin-top: 3px; }
+
+/* bubbles */
+.convo { min-height: 96px; margin-bottom: 14px; }
+.bubble {
+  padding: 10px 13px; border-radius: 14px; margin-bottom: 8px;
+  font-size: 14.5px; max-width: 88%; line-height: 1.4;
+  animation: rise 0.22s ease-out;
+}
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.bubble.caller {
+  background: var(--blue); color: #fff; margin-left: auto;
+  border-bottom-right-radius: 4px;
+}
+.bubble.agent {
+  background: var(--panel-2); border: 1px solid var(--line-2);
+  border-bottom-left-radius: 4px;
+}
+.bubble.agent .cut { color: var(--text-3); text-decoration: line-through; opacity: 0.5; }
+.bubble .who {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  opacity: 0.7; margin-bottom: 3px; font-weight: 700;
+}
+
+/* progress + gate marker */
+.track {
+  position: relative; height: 8px; background: var(--panel-2);
+  border-radius: 4px; overflow: visible; margin: 16px 0 6px;
+}
+.track .fill {
+  height: 100%; background: var(--green); border-radius: 4px; width: 0;
+  transition: width 0.06s linear;
+}
+.track .gate {
+  position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--amber);
+}
+.track .gate::after {
+  content: '“confirmed” ends'; position: absolute; top: -17px; left: 4px;
+  font-size: 9px; font-family: var(--mono); color: var(--amber); white-space: nowrap;
+}
+.track .cut { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--red-2); }
+.clock { font-family: var(--mono); font-size: 11px; color: var(--text-3); text-align: right; }
+
+/* buttons */
+.dial { display: flex; gap: 10px; margin-top: 16px; }
+.dial button {
+  flex: 1; border: none; border-radius: 13px; padding: 16px 8px;
+  font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit;
+  color: #fff; transition: transform 0.1s, opacity 0.14s;
+}
+.dial button:active:not(:disabled) { transform: scale(0.97); }
+.dial button:disabled { opacity: 0.35; }
+.dial .go { background: var(--green); }
+.dial .stop { background: var(--red); }
+.dial .end { background: var(--panel-2); color: var(--text-2); flex: 0 0 74px; border: 1px solid var(--line-2); }
+
+/* result */
+.result { border-radius: 13px; padding: 15px; border: 1px solid; margin-bottom: 14px; }
+.result.good { background: rgba(46,158,91,0.1); border-color: var(--green); }
+.result.bad { background: rgba(214,69,69,0.1); border-color: var(--red); }
+.result .hdr { font-weight: 800; font-size: 15px; margin-bottom: 7px; }
+.result.good .hdr { color: var(--green-2); }
+.result.bad .hdr { color: var(--red-2); }
+.result .body { font-size: 13.5px; color: var(--text-2); line-height: 1.5; }
+.result code {
+  font-family: var(--mono); font-size: 12px; background: rgba(0,0,0,0.3);
+  padding: 1px 5px; border-radius: 4px;
+}
+
+/* db strip */
+.dbstrip {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  margin-bottom: 14px;
+}
+.cell {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 11px 9px; text-align: center;
+}
+.cell .k {
+  font-size: 9.5px; color: var(--text-3); text-transform: uppercase;
+  letter-spacing: 0.06em; font-weight: 700; margin-bottom: 4px;
+}
+.cell .v { font-family: var(--mono); font-size: 13px; font-weight: 700; }
+.cell .v.good { color: var(--green-2); }
+.cell .v.bad { color: var(--red-2); }
+.cell .v.warn { color: var(--amber); }
+
+/* misc */
+.hint {
+  background: rgba(74,144,217,0.08); border: 1px solid rgba(74,144,217,0.26);
+  border-radius: 10px; padding: 11px 13px; font-size: 12.5px;
+  color: var(--text-2); line-height: 1.5; margin-bottom: 14px;
+}
+.hint strong { color: var(--text); }
+.log {
+  font-family: var(--mono); font-size: 11px; color: var(--text-3);
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 11px 12px; max-height: 150px; overflow: auto;
+}
+.log div { padding: 3px 0; border-bottom: 1px solid rgba(36,44,56,0.5); }
+.log div:last-child { border: 0; }
+.log .g { color: var(--green-2); }
+.log .r { color: var(--red-2); }
+.log .b { color: var(--blue); }
+h3.sec {
+  font-size: 10.5px; color: var(--text-3); text-transform: uppercase;
+  letter-spacing: 0.08em; font-weight: 700; margin: 0 0 8px;
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header>
+    <span class="dot"></span>
+    <div>
+      <div class="name">BlackBox Bistro</div>
+      <div class="sub" id="modeSub">voice booking · demo</div>
+    </div>
+    <a class="back" href="/">console →</a>
+  </header>
+
+  <div class="switch" id="switch">
+    <button data-variant="naive">naive<small>commits on tool call</small></button>
+    <button data-variant="fenced" class="on-fenced">fenced<small>commits on heard audio</small></button>
+  </div>
+
+  <div class="screen">
+    <div class="callee">
+      <div class="avatar" id="avatar">🎙️</div>
+      <div class="who">Booking agent</div>
+      <div class="st" id="callStatus">tap Call to begin</div>
+    </div>
+
+    <div class="convo" id="convo"></div>
+
+    <div class="track">
+      <div class="fill" id="fill"></div>
+      <div class="gate" id="gate" style="display:none"></div>
+      <div class="cut" id="cut" style="display:none"></div>
+    </div>
+    <div class="clock" id="clock">0.000s / 0.000s</div>
+
+    <div class="dial">
+      <button class="go" id="btnGo">📞 Call</button>
+      <button class="stop" id="btnCut" disabled>✋ Interrupt</button>
+      <button class="end" id="btnEnd" disabled>End</button>
+    </div>
+  </div>
+
+  <div id="resultBox"></div>
+
+  <h3 class="sec">Backend state</h3>
+  <div class="dbstrip">
+    <div class="cell"><div class="k">DB row</div><div class="v" id="cDb">—</div></div>
+    <div class="cell"><div class="k">Heard it?</div><div class="v" id="cHeard">—</div></div>
+    <div class="cell"><div class="k">Resolved in</div><div class="v" id="cLat">—</div></div>
+  </div>
+
+  <div class="hint" id="hint">
+    <strong>Try this:</strong> tap <strong>Call</strong>, then tap <strong>Interrupt</strong> while the
+    agent is still saying the word “confirmed”. Then switch to the other variant and do exactly the same
+    thing. Same interruption, same database — only the commit rule differs.
+  </div>
+
+  <h3 class="sec">Fence event log</h3>
+  <div class="log" id="log"><div>Waiting for a call…</div></div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+
+  function api(path, body) {
+    var opts = body === undefined
+      ? { method: 'GET' }
+      : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+    return fetch(path, opts).then(function (r) {
+      return r.text().then(function (t) {
+        var d;
+        try { d = t ? JSON.parse(t) : {}; } catch (e) { throw new Error('bad response'); }
+        if (!r.ok || d.error) throw new Error(d.error || d.detail || ('HTTP ' + r.status));
+        return d;
+      });
+    });
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function fmt(n, d) { return (n == null || isNaN(n)) ? '—' : Number(n).toFixed(d == null ? 3 : d); }
+
+  var TL = null, variant = 'fenced', call = null, raf = null, t0 = 0, pos = 0;
+  // iOS will not speak unless synthesis is kicked off inside a user gesture,
+  // so the first tap primes it. That is cause #4 in docs/MOBILE_SETUP.md.
+  var audioUnlocked = false;
+
+  function unlockAudio() {
+    if (audioUnlocked || !('speechSynthesis' in window)) return;
+    try {
+      var u = new SpeechSynthesisUtterance(' ');
+      u.volume = 0; window.speechSynthesis.speak(u);
+      audioUnlocked = true;
+    } catch (e) {}
+  }
+
+  function speak(text) {
+    if (!('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(text);
+      u.rate = 1.0;
+      window.speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+  function hush() { if ('speechSynthesis' in window) { try { window.speechSynthesis.cancel(); } catch (e) {} } }
+
+  function setVariant(v) {
+    variant = v;
+    Array.prototype.forEach.call($('switch').querySelectorAll('button'), function (b) {
+      b.className = b.dataset.variant === v ? ('on-' + v) : '';
+    });
+  }
+  Array.prototype.forEach.call($('switch').querySelectorAll('button'), function (b) {
+    b.addEventListener('click', function () { if (!call || call.resolved) setVariant(b.dataset.variant); });
+  });
+
+  function renderConvo(cutoff) {
+    var heard = TL.words.filter(function (w) { return w.end <= cutoff + 1e-9; });
+    var rest = TL.words.filter(function (w) { return w.end > cutoff + 1e-9; });
+    $('convo').innerHTML =
+      '<div class="bubble caller"><div class="who">You</div>Book a table for 4 at 7 PM.</div>' +
+      '<div class="bubble agent"><div class="who">Agent</div>' +
+      (heard.map(function (w) { return esc(w.text); }).join(' ') || '<span class="cut">…</span>') +
+      (rest.length ? ' <span class="cut">' + rest.map(function (w) { return esc(w.text); }).join(' ') + '</span>' : '') +
+      '</div>';
+  }
+
+  function paint(position, cut) {
+    var dur = TL.duration_s || 1;
+    var cutoff = cut != null ? cut : position;
+    $('fill').style.width = Math.min((position / dur) * 100, 100) + '%';
+    $('clock').textContent = fmt(position) + 's / ' + fmt(dur) + 's';
+    renderConvo(cutoff);
+  }
+
+  function renderLog(events) {
+    $('log').innerHTML = (events || []).map(function (e) {
+      var cls = e.kind === 'gating_word_heard' || e.kind === 'playback_complete' ? 'g'
+        : (e.kind === 'barge_in' || e.kind === 'no_fence') ? 'r'
+        : e.kind === 'tool_call' ? 'b' : '';
+      return '<div class="' + cls + '">' + (e.at_s != null ? fmt(e.at_s) + 's · ' : '') + esc(e.detail) + '</div>';
+    }).join('') || '<div>No events.</div>';
+  }
+
+  function render(d) {
+    call = d;
+    $('cDb').textContent = d.db_status;
+    $('cDb').className = 'v ' + (d.db_status === 'COMMITTED' ? 'good' : d.db_status === 'ROLLED_BACK' ? 'bad' : 'warn');
+    $('cHeard').textContent = d.resolved ? (d.expected_committed ? 'YES' : 'NO') : '…';
+    $('cHeard').className = 'v ' + (d.expected_committed ? 'good' : 'bad');
+    $('cLat').textContent = d.resolution_latency_ms != null ? fmt(d.resolution_latency_ms, 1) + 'ms' : '—';
+    renderLog(d.events);
+
+    if (!d.resolved) { $('resultBox').innerHTML = ''; return; }
+
+    var html;
+    if (d.mismatch) {
+      html = '<div class="result bad"><div class="hdr">⚠️ Phantom booking</div><div class="body">' +
+        'You only heard “<em>' + esc(d.heard_text || 'nothing') + '</em>” — the word “confirmed” never finished. ' +
+        'But the database says <code>' + esc(d.db_status) + '</code>. Row #' + d.booking_id +
+        ' is a table booked for a time you never agreed to.</div></div>';
+      $('avatar').textContent = '⚠️';
+    } else if (d.db_status === 'ROLLED_BACK') {
+      html = '<div class="result good"><div class="hdr">✓ Rolled back — nothing booked</div><div class="body">' +
+        'You cut it off at ' + fmt(d.cancelled_at_s) + 's; “confirmed” only finishes at ' +
+        fmt(d.gating_word_end_s) + 's. The fence moved row #' + d.booking_id +
+        ' <code>PENDING_AUDIO → ROLLED_BACK</code> in ' + fmt(d.resolution_latency_ms, 1) +
+        'ms. No phantom booking.</div></div>';
+      $('avatar').textContent = '🛡️';
+    } else {
+      html = '<div class="result good"><div class="hdr">✓ Confirmed &amp; committed</div><div class="body">' +
+        'You heard the full confirmation, so the commit is authorised. Row #' + d.booking_id +
+        ' is real and matches what was said.</div></div>';
+      $('avatar').textContent = '✅';
+    }
+    $('resultBox').innerHTML = html;
+    $('callStatus').textContent = d.mismatch ? 'state mismatch' : 'backend matches your ear';
+  }
+
+  function tick() {
+    pos = (performance.now() - t0) / 1000;
+    if (pos >= TL.duration_s) { pos = TL.duration_s; paint(pos, null); finish(); return; }
+    paint(pos, null);
+    raf = requestAnimationFrame(tick);
+  }
+
+  function go() {
+    unlockAudio();
+    hush();
+    if (raf) cancelAnimationFrame(raf);
+    $('cut').style.display = 'none';
+    $('resultBox').innerHTML = '';
+    $('avatar').textContent = '🎙️';
+    $('callStatus').textContent = 'agent speaking…';
+
+    api('/api/call/start', { variant: variant, party_size: 4, time_str: '7:00 PM' })
+      .then(function (d) {
+        render(d);
+        $('btnGo').disabled = true; $('btnCut').disabled = false; $('btnEnd').disabled = false;
+        Array.prototype.forEach.call($('switch').querySelectorAll('button'), function (b) { b.disabled = true; });
+        pos = 0; t0 = performance.now();
+        speak(d.sentence);
+        raf = requestAnimationFrame(tick);
+      })
+      .catch(function (e) {
+        $('resultBox').innerHTML = '<div class="result bad"><div class="hdr">Error</div><div class="body">' + esc(e.message) + '</div></div>';
+      });
+  }
+
+  function reset() {
+    $('btnGo').disabled = false; $('btnCut').disabled = true; $('btnEnd').disabled = true;
+    Array.prototype.forEach.call($('switch').querySelectorAll('button'), function (b) { b.disabled = false; });
+  }
+
+  function cut() {
+    if (!call) return;
+    if (raf) cancelAnimationFrame(raf);
+    hush();
+    var at = Math.min(pos, TL.duration_s);
+    var el = $('cut');
+    el.style.left = (at / TL.duration_s) * 100 + '%';
+    el.style.display = 'block';
+    reset();
+    if (navigator.vibrate) { try { navigator.vibrate(28); } catch (e) {} }
+    paint(at, at);
+    api('/api/call/barge-in', { session_id: call.session_id, position_s: at }).then(render).catch(function () {});
+  }
+
+  function finish() {
+    if (!call) return;
+    if (raf) cancelAnimationFrame(raf);
+    reset();
+    api('/api/call/finish', { session_id: call.session_id, position_s: TL.duration_s }).then(render).catch(function () {});
+  }
+
+  function end() {
+    if (!call) return;
+    if (raf) cancelAnimationFrame(raf);
+    hush(); reset();
+    api('/api/call/hang-up', { session_id: call.session_id }).then(render).catch(function () {});
+  }
+
+  $('btnGo').addEventListener('click', go);
+  $('btnCut').addEventListener('click', cut);
+  $('btnEnd').addEventListener('click', end);
+
+  api('/api/timeline').then(function (d) {
+    TL = d;
+    var g = $('gate');
+    g.style.left = (d.gating_word_end_s / d.duration_s) * 100 + '%';
+    g.style.display = 'block';
+    setVariant('fenced');
+    paint(0, 0);
+    $('modeSub').textContent = 'replay · no API keys';
+  }).catch(function (e) {
+    $('resultBox').innerHTML = '<div class="result bad"><div class="hdr">Failed to load</div><div class="body">' + esc(e.message) + '</div></div>';
+  });
+})();
+</script>
+</body>
+</html>
