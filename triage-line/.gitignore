@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.db
+.data/
+.test-output
+.venv/
+ui/node_modules/
+ui/dist/

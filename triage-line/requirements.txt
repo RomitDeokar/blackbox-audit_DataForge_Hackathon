@@ -1,0 +1,5 @@
+# Interactive FastAPI transport and offline replay/test runner.
+fastapi>=0.110,<1
+uvicorn>=0.27,<1
+httpx>=0.27,<2
+pytest>=7
