@@ -644,7 +644,7 @@
     renderHow();
 
     var anyKeys = CFG.any_configured;
-    $('modeChip').textContent = anyKeys ? 'replay · keys detected' : 'replay · no API keys needed';
+    $('modeChip').textContent = 'browser voice + offline harness';
 
     api('/api/summary').then(function (s) {
       if ((s.totals || {}).trials) renderSummary(s);

@@ -316,6 +316,34 @@ def rollback_booking(booking_id: int) -> None:
     _transition(booking_id, STATUS_ROLLED_BACK, EVENT_ROLLED_BACK)
 
 
+def retire_booking(booking_id: int, *, replacement_id: int | None = None) -> None:
+    """Explicit user cancellation/replacement, separate from audio rollback.
+
+    A replacement must already be COMMITTED by the original fence. Keep both
+    rows and transaction events for audit; never rewrite the original details.
+    """
+    with _LOCK, _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute("SELECT status FROM bookings WHERE id = ?", (booking_id,)).fetchone()
+            if row is None:
+                raise BookingNotFoundError(f"no booking with id {booking_id}")
+            status = "CANCELLED" if replacement_id is None else "SUPERSEDED"
+            if row["status"] in ("CANCELLED", "SUPERSEDED", STATUS_ROLLED_BACK):
+                conn.execute("COMMIT")
+                return
+            if replacement_id is not None:
+                replacement = conn.execute("SELECT status FROM bookings WHERE id = ?", (replacement_id,)).fetchone()
+                if replacement_id == booking_id or replacement is None or replacement["status"] != STATUS_COMMITTED:
+                    raise IllegalTransitionError("Replacement must be a different committed booking")
+            conn.execute("UPDATE bookings SET status = ? WHERE id = ?", (status, booking_id))
+            _log(conn, booking_id, "USER_CANCELLED" if replacement_id is None else f"SUPERSEDED_BY_{replacement_id}")
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+
+
 def get_booking(booking_id: int) -> dict:
     """Return a booking row as a dict.
 

@@ -2,455 +2,165 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#0a0c10">
-<title>BlackBox Bistro — Call</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0c10'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%233fd07a'/%3E%3C/svg%3E">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>BlackBox Audit — Voice Studio</title>
+<link rel="icon" href="data:,">
 <style>
-:root {
-  --bg: #0a0c10;
-  --panel: #141922;
-  --panel-2: #1a2029;
-  --line: #242c38;
-  --line-2: #313b4a;
-  --text: #e6ebf2;
-  --text-2: #9aa6b8;
-  --text-3: #66717f;
-  --green: #2e9e5b;
-  --green-2: #3fd07a;
-  --red: #d64545;
-  --red-2: #ff6b6b;
-  --amber: #d99a2b;
-  --blue: #4a90d9;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body {
-  margin: 0; padding: 0;
-  background: var(--bg); color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 16px; line-height: 1.45;
-  min-height: 100vh;
-  overscroll-behavior: none;
-}
-.shell {
-  max-width: 520px; margin: 0 auto;
-  padding: env(safe-area-inset-top) 16px calc(20px + env(safe-area-inset-bottom));
-}
-header {
-  padding: 18px 0 14px; display: flex; align-items: center; gap: 10px;
-}
-header .dot {
-  width: 10px; height: 10px; border-radius: 50%;
-  background: var(--green-2); box-shadow: 0 0 10px var(--green-2);
-}
-header .name { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
-header .sub { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
-header a.back {
-  margin-left: auto; color: var(--text-3); text-decoration: none;
-  font-size: 12px; font-family: var(--mono);
-  border: 1px solid var(--line); padding: 5px 10px; border-radius: 6px;
-}
-
-/* variant switch */
-.switch { display: flex; gap: 8px; margin-bottom: 14px; }
-.switch button {
-  flex: 1; background: var(--panel); border: 1px solid var(--line-2);
-  color: var(--text-2); padding: 11px 6px; border-radius: 9px;
-  font-size: 13px; font-weight: 700; cursor: pointer;
-  font-family: inherit; transition: all 0.14s;
-}
-.switch button small { display: block; font-weight: 400; font-size: 10.5px; opacity: 0.8; margin-top: 2px; }
-.switch button.on-naive { background: rgba(214,69,69,0.2); border-color: var(--red); color: var(--red-2); }
-.switch button.on-fenced { background: rgba(46,158,91,0.2); border-color: var(--green); color: var(--green-2); }
-
-/* phone screen */
-.screen {
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: 16px; padding: 18px 16px; margin-bottom: 14px;
-}
-.callee { text-align: center; margin-bottom: 16px; }
-.avatar {
-  width: 68px; height: 68px; border-radius: 50%; margin: 0 auto 10px;
-  background: linear-gradient(140deg, #1f3a2b, #14202a);
-  border: 1px solid var(--line-2);
-  display: flex; align-items: center; justify-content: center; font-size: 29px;
-}
-.callee .who { font-weight: 700; font-size: 17px; }
-.callee .st { font-size: 12.5px; color: var(--text-3); font-family: var(--mono); margin-top: 3px; }
-
-/* bubbles */
-.convo { min-height: 96px; margin-bottom: 14px; }
-.bubble {
-  padding: 10px 13px; border-radius: 14px; margin-bottom: 8px;
-  font-size: 14.5px; max-width: 88%; line-height: 1.4;
-  animation: rise 0.22s ease-out;
-}
-@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-.bubble.caller {
-  background: var(--blue); color: #fff; margin-left: auto;
-  border-bottom-right-radius: 4px;
-}
-.bubble.agent {
-  background: var(--panel-2); border: 1px solid var(--line-2);
-  border-bottom-left-radius: 4px;
-}
-.bubble.agent .cut { color: var(--text-3); text-decoration: line-through; opacity: 0.5; }
-.bubble .who {
-  font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
-  opacity: 0.7; margin-bottom: 3px; font-weight: 700;
-}
-
-/* progress + gate marker */
-.track {
-  position: relative; height: 8px; background: var(--panel-2);
-  border-radius: 4px; overflow: visible; margin: 16px 0 6px;
-}
-.track .fill {
-  height: 100%; background: var(--green); border-radius: 4px; width: 0;
-  transition: width 0.06s linear;
-}
-.track .gate {
-  position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--amber);
-}
-.track .gate::after {
-  content: '“confirmed” ends'; position: absolute; top: -17px; left: 4px;
-  font-size: 9px; font-family: var(--mono); color: var(--amber); white-space: nowrap;
-}
-.track .cut { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--red-2); }
-.clock { font-family: var(--mono); font-size: 11px; color: var(--text-3); text-align: right; }
-
-/* buttons */
-.dial { display: flex; gap: 10px; margin-top: 16px; }
-.dial button {
-  flex: 1; border: none; border-radius: 13px; padding: 16px 8px;
-  font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit;
-  color: #fff; transition: transform 0.1s, opacity 0.14s;
-}
-.dial button:active:not(:disabled) { transform: scale(0.97); }
-.dial button:disabled { opacity: 0.35; }
-.dial .go { background: var(--green); }
-.dial .stop { background: var(--red); }
-.dial .end { background: var(--panel-2); color: var(--text-2); flex: 0 0 74px; border: 1px solid var(--line-2); }
-
-/* result */
-.result { border-radius: 13px; padding: 15px; border: 1px solid; margin-bottom: 14px; }
-.result.good { background: rgba(46,158,91,0.1); border-color: var(--green); }
-.result.bad { background: rgba(214,69,69,0.1); border-color: var(--red); }
-.result .hdr { font-weight: 800; font-size: 15px; margin-bottom: 7px; }
-.result.good .hdr { color: var(--green-2); }
-.result.bad .hdr { color: var(--red-2); }
-.result .body { font-size: 13.5px; color: var(--text-2); line-height: 1.5; }
-.result code {
-  font-family: var(--mono); font-size: 12px; background: rgba(0,0,0,0.3);
-  padding: 1px 5px; border-radius: 4px;
-}
-
-/* db strip */
-.dbstrip {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-  margin-bottom: 14px;
-}
-.cell {
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: 10px; padding: 11px 9px; text-align: center;
-}
-.cell .k {
-  font-size: 9.5px; color: var(--text-3); text-transform: uppercase;
-  letter-spacing: 0.06em; font-weight: 700; margin-bottom: 4px;
-}
-.cell .v { font-family: var(--mono); font-size: 13px; font-weight: 700; }
-.cell .v.good { color: var(--green-2); }
-.cell .v.bad { color: var(--red-2); }
-.cell .v.warn { color: var(--amber); }
-
-/* misc */
-.hint {
-  background: rgba(74,144,217,0.08); border: 1px solid rgba(74,144,217,0.26);
-  border-radius: 10px; padding: 11px 13px; font-size: 12.5px;
-  color: var(--text-2); line-height: 1.5; margin-bottom: 14px;
-}
-.hint strong { color: var(--text); }
-.log {
-  font-family: var(--mono); font-size: 11px; color: var(--text-3);
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: 10px; padding: 11px 12px; max-height: 150px; overflow: auto;
-}
-.log div { padding: 3px 0; border-bottom: 1px solid rgba(36,44,56,0.5); }
-.log div:last-child { border: 0; }
-.log .g { color: var(--green-2); }
-.log .r { color: var(--red-2); }
-.log .b { color: var(--blue); }
-h3.sec {
-  font-size: 10.5px; color: var(--text-3); text-transform: uppercase;
-  letter-spacing: 0.08em; font-weight: 700; margin: 0 0 8px;
-}
+:root{color-scheme:dark;--bg:#0b1220;--panel:#111d30;--line:#26364e;--ink:#edf3ff;--muted:#a2b1c7;--green:#6de2b5;--blue:#80aaff;--red:#ff9096}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,-apple-system,sans-serif}button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}a{color:var(--blue)}.shell{max-width:1120px;margin:auto;padding:24px 24px 40px}header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:26px}.brand{font-weight:750;letter-spacing:-.4px}.brand i{display:inline-block;background:var(--green);height:10px;width:10px;border-radius:50%;margin-right:9px}.tag{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--green)}h1{font-size:clamp(28px,4vw,42px);line-height:1.18;letter-spacing:-1.3px;margin:10px 0 14px}h2{font-size:16px;margin:0}.intro{color:var(--muted);max-width:730px;margin:0 0 25px}.layout{display:grid;grid-template-columns:1.3fr 1fr;gap:18px}.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px}.cardhead{display:flex;align-items:center;justify-content:space-between;gap:10px}.pill{font-size:11px;border:1px solid var(--line);border-radius:30px;padding:4px 10px;color:var(--muted)}.orb{width:112px;height:112px;margin:30px auto 16px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 30% 25%,#426d83,#172f48 60%);border:1px solid #527886;box-shadow:0 0 60px #6de2b515;transition:.2s}.orb.live{box-shadow:0 0 70px #6de2b538;border-color:var(--green)}.orb svg{width:34px;stroke:var(--green);fill:none;stroke-width:1.5}.status{text-align:center;font-size:18px;font-weight:650}.substatus{text-align:center;color:var(--muted);font-size:12px;min-height:40px}.meter{height:4px;background:#26364e;margin:17px auto;width:140px;border-radius:5px;overflow:hidden}.meter span{display:block;background:var(--green);height:100%;width:0}.controls{display:flex;justify-content:center;gap:10px;margin:22px 0}.btn{border:1px solid var(--line);background:#1a2b43;color:var(--ink);border-radius:10px;padding:11px 17px;font-weight:650}.primary{background:var(--green);color:#092b22;border:0}.danger{color:var(--red)}.variants{display:flex;gap:8px;margin-top:22px}.variants button{flex:1;padding:12px 8px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--muted);font-size:13px}.variants button.selected{border-color:var(--green);background:#6de2b50b;color:var(--green)}.variants button[data-v="naive"].selected{border-color:var(--red);color:var(--red)}.caption{font-size:12px;color:var(--muted);margin:12px 0 0}.transcript{height:220px;overflow:auto;margin-top:16px;border-top:1px solid var(--line);padding-top:12px}.message{padding:10px 12px;margin-bottom:10px;border:1px solid var(--line);border-radius:10px;font-size:13px;overflow-wrap:anywhere}.message.you{border-color:#39577a;background:#80aaff0a}.message small{display:block;color:var(--muted);font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:3px}.empty{color:var(--muted);font-size:13px;margin:22px 0}.interim{min-height:26px;color:var(--green);font-size:13px;overflow-wrap:anywhere}.form{display:flex;gap:7px;margin-top:8px}.form input{min-width:0;flex:1;background:var(--bg);border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:11px;font-size:13px}.form button{padding:9px 12px}.audit{display:grid;gap:12px}.metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}.metric{background:var(--bg);padding:14px;border-radius:10px}.label{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}.value{font:600 15px/1.6 ui-monospace,monospace;margin-top:5px;overflow-wrap:anywhere}.good{color:var(--green)}.bad{color:var(--red)}.evidence{padding:13px;background:var(--bg);border-radius:10px;font-size:12px;color:var(--muted);margin-top:14px}.verdict{border-left:3px solid var(--blue);padding:10px 12px;margin-top:14px;font-size:13px;color:var(--muted)}.log{max-height:190px;overflow:auto;font:11px/1.7 ui-monospace,monospace;color:var(--muted);margin-top:13px}.log div{padding:6px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.notice{font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:12px;padding:15px;margin-top:18px}.notice strong{color:var(--ink)}.error{display:none;margin:12px 0;padding:12px;border:1px solid var(--red);border-radius:9px;color:var(--red);font-size:13px}.history{margin-top:15px;font-size:12px;color:var(--muted)}.history div{border-bottom:1px solid var(--line);padding:7px 0}details{font-size:12px;color:var(--muted);margin-top:12px}summary{cursor:pointer}input[type=range]{width:100%;accent-color:var(--green)}:focus-visible{outline:2px solid var(--blue);outline-offset:3px}@media(max-width:720px){.shell{padding:18px 14px 30px}.layout{grid-template-columns:1fr}.card{padding:18px}.orb{margin-top:22px;width:90px;height:90px}.transcript{height:180px}header{margin-bottom:20px}.intro{font-size:13px}h1{font-size:30px}.controls .btn{flex:1}header a{font-size:12px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 <div class="shell">
-
-  <header>
-    <span class="dot"></span>
-    <div>
-      <div class="name">BlackBox Bistro</div>
-      <div class="sub" id="modeSub">voice booking · demo</div>
-    </div>
-    <a class="back" href="/">console →</a>
-  </header>
-
-  <div class="switch" id="switch">
-    <button data-variant="naive">naive<small>commits on tool call</small></button>
-    <button data-variant="fenced" class="on-fenced">fenced<small>commits on heard audio</small></button>
-  </div>
-
-  <div class="screen">
-    <div class="callee">
-      <div class="avatar" id="avatar">🎙️</div>
-      <div class="who">Booking agent</div>
-      <div class="st" id="callStatus">tap Call to begin</div>
-    </div>
-
-    <div class="convo" id="convo"></div>
-
-    <div class="track">
-      <div class="fill" id="fill"></div>
-      <div class="gate" id="gate" style="display:none"></div>
-      <div class="cut" id="cut" style="display:none"></div>
-    </div>
-    <div class="clock" id="clock">0.000s / 0.000s</div>
-
-    <div class="dial">
-      <button class="go" id="btnGo">📞 Call</button>
-      <button class="stop" id="btnCut" disabled>✋ Interrupt</button>
-      <button class="end" id="btnEnd" disabled>End</button>
-    </div>
-  </div>
-
-  <div id="resultBox"></div>
-
-  <h3 class="sec">Backend state</h3>
-  <div class="dbstrip">
-    <div class="cell"><div class="k">DB row</div><div class="v" id="cDb">—</div></div>
-    <div class="cell"><div class="k">Heard it?</div><div class="v" id="cHeard">—</div></div>
-    <div class="cell"><div class="k">Resolved in</div><div class="v" id="cLat">—</div></div>
-  </div>
-
-  <div class="hint" id="hint">
-    <strong>Try this:</strong> tap <strong>Call</strong>, then tap <strong>Interrupt</strong> while the
-    agent is still saying the word “confirmed”. Then switch to the other variant and do exactly the same
-    thing. Same interruption, same database — only the commit rule differs.
-  </div>
-
-  <h3 class="sec">Fence event log</h3>
-  <div class="log" id="log"><div>Waiting for a call…</div></div>
-
+<header><div class="brand"><i></i>BlackBox Audit <span class="pill">Voice Studio</span></div><a href="/" target="_top">Audit console</a></header>
+<div class="tag">Speak. Interrupt. Inspect.</div>
+<h1>Your voice drives the experiment.</h1>
+<p class="intro">Ask for a table, then speak over the confirmation to change it. See whether the database follows the audio you heard — or commits too soon. No scripted interruption buttons.</p>
+<div class="error" id="error" role="alert"></div>
+<div class="layout">
+<section class="card">
+<div class="cardhead"><h2>Conversation</h2><span class="pill" id="connection">Connecting to harness</span></div>
+<div class="orb" id="orb"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="12" y="3" width="8" height="17" rx="4"/><path d="M8 15v2a8 8 0 0 0 16 0v-2M16 25v5M11 30h10"/></svg></div>
+<div class="status" id="status" role="status" aria-live="polite">Ready when you are</div>
+<div class="substatus" id="substatus">Use headphones so the agent does not interrupt itself.</div>
+<div class="meter" aria-hidden="true"><span id="level"></span></div>
+<div class="controls"><button class="btn primary" id="start">Enable microphone</button><button class="btn danger" id="end" disabled>End session</button></div>
+<div class="variants" id="variants"><button data-v="fenced" class="selected" aria-pressed="true">Fenced · audio-gated</button><button data-v="naive" aria-pressed="false">Naive · commits early</button></div>
+<p class="caption" id="policy">The original AudioFence waits for acknowledged confirmation audio.</p>
+<div class="transcript" id="transcript" role="log" aria-live="polite"><p class="empty">Your actual words and the agent’s responses appear here.</p></div>
+<div class="interim" id="interim" aria-live="polite"></div>
+<form class="form" id="form"><input id="text" aria-label="Message to booking agent" placeholder="Or type your own request…" maxlength="500" autocomplete="off" required><button class="btn" type="submit">Send</button></form>
+<p class="caption">API-free booking dialogue with spoken replies. Correct either detail naturally, for example “six people instead” or “actually eight thirty PM”. This is a booking assistant, not a general-purpose LLM.</p>
+<details><summary>Microphone and playback settings</summary><label for="sensitivity">Barge-in threshold (raise in noisy rooms)</label><input type="range" id="sensitivity" min="0.015" max="0.15" step="0.005" value="0.045"><label for="rate">Agent speech speed</label><input type="range" id="rate" min="0.6" max="1.2" step="0.1" value="0.8"><p>Chrome desktop/Android recommended. Browser speech recognition may send audio to its provider. Microphone permission and HTTPS are required. If unsupported, typed input still uses the same backend and audible playback.</p></details>
+</section>
+<aside class="audit">
+<section class="card"><div class="cardhead"><h2>Live backend evidence</h2><span class="pill" id="sessionId">No booking</span></div>
+<div class="metrics"><div class="metric"><div class="label">SQLite row</div><div class="value" id="db">—</div></div><div class="metric"><div class="label">Confirmation completed</div><div class="value" id="heard">—</div></div><div class="metric"><div class="label">Fence state</div><div class="value" id="fence">—</div></div><div class="metric"><div class="label">Acknowledged segments</div><div class="value" id="segments">0 / 3</div></div></div>
+<div class="evidence"><div class="label">Current understood request</div><div id="intent">No details yet.</div></div>
+<div class="evidence"><div class="label">Completed audio only</div><div id="audioText">No playback acknowledged yet.</div></div>
+<div class="verdict" id="verdict">Start a conversation to inspect the real transaction. Changing the variant never changes the data layer.</div>
+<div class="history" id="history"></div>
+</section>
+<section class="card"><h2>Transaction event stream</h2><div class="log" id="log">Waiting for speech…</div></section>
+</aside>
 </div>
-
+<div class="notice"><strong>What this demo proves:</strong> microphone barge-in and completed browser audio segments drive the repository’s Python <code>AudioFence</code> and SQLite store. Segment end events are conservative client telemetry, <strong>not Rime word timestamps or verified human hearing</strong>. The console’s A/B and 606-trial chaos sweeps remain separate offline fixture replays. Production LiveKit / Deepgram / Rime integration still needs your provider credentials. Demo records are shared; do not enter personal or payment information.</div>
+</div>
 <script>
-(function () {
-  'use strict';
-  var $ = function (id) { return document.getElementById(id); };
-
-  function api(path, body) {
-    var opts = body === undefined
-      ? { method: 'GET' }
-      : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
-    return fetch(path, opts).then(function (r) {
-      return r.text().then(function (t) {
-        var d;
-        try { d = t ? JSON.parse(t) : {}; } catch (e) { throw new Error('bad response'); }
-        if (!r.ok || d.error) throw new Error(d.error || d.detail || ('HTTP ' + r.status));
-        return d;
-      });
-    });
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+let session=null, variant='fenced', context={}, mic=null, audioContext=null, recognition=null;
+let listening=false, speaking=false, frame=null, voiceEpoch=0, started=0, stopping=Promise.resolve();
+let pendingTurn=Promise.resolve(), acknowledgement=Promise.resolve(), utterance=null, stopUtterance=null;
+let processing=false, connected=false, ending=false, turnRevision=0, finalTimer=null, finalText='';
+const saved=new Set();
+async function api(path, data) {
+ const opts=data===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)};
+ const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),15000);let r;
+ try{r=await fetch(path,{...opts,signal:controller.signal});}finally{clearTimeout(timer);}
+ const body=await r.json(); if(!r.ok||body.error) throw Error(body.error || (typeof body.detail==='string'?body.detail:'Request failed: '+r.status)); return body;
+}
+function error(e){$('error').style.display='block';$('error').textContent=e.message||String(e);}
+function status(text,sub){$('status').textContent=text;if(sub!==undefined)$('substatus').textContent=sub;}
+function message(who,text){const root=$('transcript');if(root.querySelector('.empty'))root.textContent='';const el=document.createElement('div');el.className='message '+(who==='You'?'you':'');const label=document.createElement('small');label.textContent=who;el.append(label,document.createTextNode(text));root.append(el);while(root.children.length>60)root.firstChild.remove();root.scrollTop=root.scrollHeight;return el;}
+function render(d){
+ session=d;$('intent').textContent=d.party_size+' guests · '+d.time_str;$('sessionId').textContent='row #'+d.booking_id;$('db').textContent=d.db_status;$('db').className='value '+(d.db_status==='COMMITTED'?'good':d.db_status==='ROLLED_BACK'?'bad':'');
+ $('heard').textContent=d.expected_committed?'Yes':'Not yet';$('heard').className='value '+(d.expected_committed?'good':'');$('fence').textContent=d.fence_state||'No fence';$('segments').textContent=d.acknowledged_segments+' / 3';$('audioText').textContent=d.heard_text||'No complete audio segment acknowledged.';
+ $('log').textContent='';for(const e of d.events){const line=document.createElement('div');line.textContent=(e.at_s===null?'—':e.at_s.toFixed(3)+'s')+' · '+e.detail;$('log').append(line);}$('log').scrollTop=$('log').scrollHeight;
+ $('verdict').textContent=['CANCELLED','SUPERSEDED'].includes(d.db_status)?'Booking '+d.db_status.toLowerCase()+'. Original audio evidence remains in the audit.':!d.resolved?(d.variant==='naive'?'Already committed before confirmation audio. Speak now to expose the phantom booking.':'Pending. Audio segments are acknowledged only after actual synthesis completion.'):(d.mismatch?'PHANTOM BOOKING: committed without completed confirmation audio.':d.db_status==='ROLLED_BACK'?'Rolled back. No booking survives the unheard confirmation.':'Committed after the confirmation segment completed.');
+ if(d.resolved&&!saved.has(d.session_id)){saved.add(d.session_id);const line=document.createElement('div');line.textContent='#'+d.booking_id+' · '+d.party_size+' guests · '+d.time_str+' · '+d.db_status+(d.mismatch?' · MISMATCH':'');$('history').prepend(line);while($('history').children.length>8)$('history').lastChild.remove();}
+}
+function now(){return Math.max(.001,(performance.now()-started)/1000);}
+function hush(){voiceEpoch++;speaking=false;if(stopUtterance){stopUtterance(false);stopUtterance=null;}if('speechSynthesis'in window)speechSynthesis.cancel();}
+function interrupt(reason){
+ if(!speaking && (!session||session.resolved))return stopping;
+ const old=session,position=now();hush();status('Listening',reason||'Speak your correction.');
+ if(old&&!old.resolved){stopping=stopping.catch(()=>{}).then(()=>acknowledgement.catch(()=>{})).then(()=>api('/api/voice/event',{session_id:old.session_id,action:'interrupt',position_s:position})).then(d=>{if(session&&session.session_id===d.session_id)render(d);}).catch(e=>{error(e);throw e;});}
+ return stopping;
+}
+function speakSegment(text,epoch){
+ return new Promise((resolve,reject)=>{
+  if(epoch!==voiceEpoch)return resolve(false);
+  if(!('speechSynthesis'in window))return reject(Error('This browser cannot play speech. Use Chrome or Safari; no silent playback is scored.'));
+  utterance=new SpeechSynthesisUtterance(text);utterance.lang='en-US';utterance.rate=Number($('rate').value);
+  const voices=speechSynthesis.getVoices();const local=voices.find(v=>v.lang.startsWith('en')&&v.localService)||voices.find(v=>v.lang.startsWith('en'));if(local)utterance.voice=local;
+  stopUtterance=resolve;let began=false;
+  const timeout=setTimeout(()=>{if(!began&&epoch===voiceEpoch){speechSynthesis.cancel();reject(Error('Audio playback did not start. Tap Enable microphone or try Chrome.'));}},10000);
+  utterance.onstart=()=>{began=true;clearTimeout(timeout);};
+  utterance.onend=()=>{clearTimeout(timeout);stopUtterance=null;resolve(epoch===voiceEpoch);};
+  utterance.onerror=e=>{clearTimeout(timeout);stopUtterance=null;if(epoch!==voiceEpoch||e.error==='canceled'||e.error==='interrupted')resolve(false);else reject(Error('Speech playback failed: '+e.error));};
+  speechSynthesis.speak(utterance);
+ });
+}
+async function reply(text){
+ const epoch=++voiceEpoch;speaking=true;started=performance.now();message('Agent',text);status('Agent speaking');$('end').disabled=false;
+ try{await speakSegment(text,epoch);}catch(e){error(e);}finally{if(epoch===voiceEpoch){speaking=false;status(listening?'Listening':'Your turn','Speak or type your next message.');}}
+}
+async function play(d){
+ const epoch=++voiceEpoch;started=performance.now();speaking=true;status('Agent speaking','Speak over the agent to interrupt — headphones recommended.');
+ message('Agent',d.sentence);
+ try{
+  for(let i=0;i<d.segments.length;i++){
+   if(!(await speakSegment(d.segments[i],epoch))||epoch!==voiceEpoch)return;
+   const position=now();
+   acknowledgement=api('/api/voice/event',{session_id:d.session_id,action:'segment',segment_index:i,position_s:position});
+   const updated=await acknowledgement;if(epoch!==voiceEpoch)return;render(updated);
   }
-
-  function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
-  function fmt(n, d) { return (n == null || isNaN(n)) ? '—' : Number(n).toFixed(d == null ? 3 : d); }
-
-  var TL = null, variant = 'fenced', call = null, raf = null, t0 = 0, pos = 0;
-  // iOS will not speak unless synthesis is kicked off inside a user gesture,
-  // so the first tap primes it. That is cause #4 in docs/MOBILE_SETUP.md.
-  var audioUnlocked = false;
-
-  function unlockAudio() {
-    if (audioUnlocked || !('speechSynthesis' in window)) return;
-    try {
-      var u = new SpeechSynthesisUtterance(' ');
-      u.volume = 0; window.speechSynthesis.speak(u);
-      audioUnlocked = true;
-    } catch (e) {}
-  }
-
-  function speak(text) {
-    if (!('speechSynthesis' in window)) return;
-    try {
-      window.speechSynthesis.cancel();
-      var u = new SpeechSynthesisUtterance(text);
-      u.rate = 1.0;
-      window.speechSynthesis.speak(u);
-    } catch (e) {}
-  }
-  function hush() { if ('speechSynthesis' in window) { try { window.speechSynthesis.cancel(); } catch (e) {} } }
-
-  function setVariant(v) {
-    variant = v;
-    Array.prototype.forEach.call($('switch').querySelectorAll('button'), function (b) {
-      b.className = b.dataset.variant === v ? ('on-' + v) : '';
-    });
-  }
-  Array.prototype.forEach.call($('switch').querySelectorAll('button'), function (b) {
-    b.addEventListener('click', function () { if (!call || call.resolved) setVariant(b.dataset.variant); });
-  });
-
-  function renderConvo(cutoff) {
-    var heard = TL.words.filter(function (w) { return w.end <= cutoff + 1e-9; });
-    var rest = TL.words.filter(function (w) { return w.end > cutoff + 1e-9; });
-    $('convo').innerHTML =
-      '<div class="bubble caller"><div class="who">You</div>Book a table for 4 at 7 PM.</div>' +
-      '<div class="bubble agent"><div class="who">Agent</div>' +
-      (heard.map(function (w) { return esc(w.text); }).join(' ') || '<span class="cut">…</span>') +
-      (rest.length ? ' <span class="cut">' + rest.map(function (w) { return esc(w.text); }).join(' ') + '</span>' : '') +
-      '</div>';
-  }
-
-  function paint(position, cut) {
-    var dur = TL.duration_s || 1;
-    var cutoff = cut != null ? cut : position;
-    $('fill').style.width = Math.min((position / dur) * 100, 100) + '%';
-    $('clock').textContent = fmt(position) + 's / ' + fmt(dur) + 's';
-    renderConvo(cutoff);
-  }
-
-  function renderLog(events) {
-    $('log').innerHTML = (events || []).map(function (e) {
-      var cls = e.kind === 'gating_word_heard' || e.kind === 'playback_complete' ? 'g'
-        : (e.kind === 'barge_in' || e.kind === 'no_fence') ? 'r'
-        : e.kind === 'tool_call' ? 'b' : '';
-      return '<div class="' + cls + '">' + (e.at_s != null ? fmt(e.at_s) + 's · ' : '') + esc(e.detail) + '</div>';
-    }).join('') || '<div>No events.</div>';
-  }
-
-  function render(d) {
-    call = d;
-    $('cDb').textContent = d.db_status;
-    $('cDb').className = 'v ' + (d.db_status === 'COMMITTED' ? 'good' : d.db_status === 'ROLLED_BACK' ? 'bad' : 'warn');
-    $('cHeard').textContent = d.resolved ? (d.expected_committed ? 'YES' : 'NO') : '…';
-    $('cHeard').className = 'v ' + (d.expected_committed ? 'good' : 'bad');
-    $('cLat').textContent = d.resolution_latency_ms != null ? fmt(d.resolution_latency_ms, 1) + 'ms' : '—';
-    renderLog(d.events);
-
-    if (!d.resolved) { $('resultBox').innerHTML = ''; return; }
-
-    var html;
-    if (d.mismatch) {
-      html = '<div class="result bad"><div class="hdr">⚠️ Phantom booking</div><div class="body">' +
-        'You only heard “<em>' + esc(d.heard_text || 'nothing') + '</em>” — the word “confirmed” never finished. ' +
-        'But the database says <code>' + esc(d.db_status) + '</code>. Row #' + d.booking_id +
-        ' is a table booked for a time you never agreed to.</div></div>';
-      $('avatar').textContent = '⚠️';
-    } else if (d.db_status === 'ROLLED_BACK') {
-      html = '<div class="result good"><div class="hdr">✓ Rolled back — nothing booked</div><div class="body">' +
-        'You cut it off at ' + fmt(d.cancelled_at_s) + 's; “confirmed” only finishes at ' +
-        fmt(d.gating_word_end_s) + 's. The fence moved row #' + d.booking_id +
-        ' <code>PENDING_AUDIO → ROLLED_BACK</code> in ' + fmt(d.resolution_latency_ms, 1) +
-        'ms. No phantom booking.</div></div>';
-      $('avatar').textContent = '🛡️';
-    } else {
-      html = '<div class="result good"><div class="hdr">✓ Confirmed &amp; committed</div><div class="body">' +
-        'You heard the full confirmation, so the commit is authorised. Row #' + d.booking_id +
-        ' is real and matches what was said.</div></div>';
-      $('avatar').textContent = '✅';
-    }
-    $('resultBox').innerHTML = html;
-    $('callStatus').textContent = d.mismatch ? 'state mismatch' : 'backend matches your ear';
-  }
-
-  function tick() {
-    pos = (performance.now() - t0) / 1000;
-    if (pos >= TL.duration_s) { pos = TL.duration_s; paint(pos, null); finish(); return; }
-    paint(pos, null);
-    raf = requestAnimationFrame(tick);
-  }
-
-  function go() {
-    unlockAudio();
-    hush();
-    if (raf) cancelAnimationFrame(raf);
-    $('cut').style.display = 'none';
-    $('resultBox').innerHTML = '';
-    $('avatar').textContent = '🎙️';
-    $('callStatus').textContent = 'agent speaking…';
-
-    api('/api/call/start', { variant: variant, party_size: 4, time_str: '7:00 PM' })
-      .then(function (d) {
-        render(d);
-        $('btnGo').disabled = true; $('btnCut').disabled = false; $('btnEnd').disabled = false;
-        Array.prototype.forEach.call($('switch').querySelectorAll('button'), function (b) { b.disabled = true; });
-        pos = 0; t0 = performance.now();
-        speak(d.sentence);
-        raf = requestAnimationFrame(tick);
-      })
-      .catch(function (e) {
-        $('resultBox').innerHTML = '<div class="result bad"><div class="hdr">Error</div><div class="body">' + esc(e.message) + '</div></div>';
-      });
-  }
-
-  function reset() {
-    $('btnGo').disabled = false; $('btnCut').disabled = true; $('btnEnd').disabled = true;
-    Array.prototype.forEach.call($('switch').querySelectorAll('button'), function (b) { b.disabled = false; });
-  }
-
-  function cut() {
-    if (!call) return;
-    if (raf) cancelAnimationFrame(raf);
-    hush();
-    var at = Math.min(pos, TL.duration_s);
-    var el = $('cut');
-    el.style.left = (at / TL.duration_s) * 100 + '%';
-    el.style.display = 'block';
-    reset();
-    if (navigator.vibrate) { try { navigator.vibrate(28); } catch (e) {} }
-    paint(at, at);
-    api('/api/call/barge-in', { session_id: call.session_id, position_s: at }).then(render).catch(function () {});
-  }
-
-  function finish() {
-    if (!call) return;
-    if (raf) cancelAnimationFrame(raf);
-    reset();
-    api('/api/call/finish', { session_id: call.session_id, position_s: TL.duration_s }).then(render).catch(function () {});
-  }
-
-  function end() {
-    if (!call) return;
-    if (raf) cancelAnimationFrame(raf);
-    hush(); reset();
-    api('/api/call/hang-up', { session_id: call.session_id }).then(render).catch(function () {});
-  }
-
-  $('btnGo').addEventListener('click', go);
-  $('btnCut').addEventListener('click', cut);
-  $('btnEnd').addEventListener('click', end);
-
-  api('/api/timeline').then(function (d) {
-    TL = d;
-    var g = $('gate');
-    g.style.left = (d.gating_word_end_s / d.duration_s) * 100 + '%';
-    g.style.display = 'block';
-    setVariant('fenced');
-    paint(0, 0);
-    $('modeSub').textContent = 'replay · no API keys';
-  }).catch(function (e) {
-    $('resultBox').innerHTML = '<div class="result bad"><div class="hdr">Failed to load</div><div class="body">' + esc(e.message) + '</div></div>';
-  });
+  if(epoch!==voiceEpoch)return;
+  render(await api('/api/voice/event',{session_id:d.session_id,action:'complete',position_s:now()}));
+  speaking=false;status(listening?'Listening':'Ready for another request','The completed booking remains visible in the audit.');
+ }catch(e){error(e);await interrupt('Playback failed; closing the pending transaction.').catch(()=>{});}
+}
+async function turn(text,revision){
+ if(ending)return;
+ if(!connected)throw Error('Backend is not connected. Please reload when the harness is available.');
+ processing=true;
+ try{
+  await interrupt('Processing your words…');await stopping;
+  message('You',text);$('interim').textContent='';status('Understanding your request');
+  const parsed=await api('/api/voice/parse',{text,...context});
+  context={party_size:parsed.party_size??null,time_str:parsed.time_str??null};
+  $('intent').textContent=(context.party_size?context.party_size+' guests':'Party size needed')+' · '+(context.time_str||'Time needed');
+  if(parsed.cancel){if(session)render(await api('/api/voice/event',{session_id:session.session_id,action:'cancel',position_s:now()}));context={};session=null;}
+  if(revision!==turnRevision||ending)return;
+  if(!parsed.ready){reply(parsed.reply);return;}
+  const previous=session;
+  const separate=/\b(new|another|separate)\s+(booking|table|reservation)\b/i.test(text);
+  const d=await api('/api/voice/start',{variant,...context,previous_session_id:!separate&&previous&&previous.variant===variant?previous.session_id:null});
+  render(d);$('end').disabled=false;
+  if(revision!==turnRevision||ending){await interrupt('Newer correction received.');return;}
+  play(d);
+ }finally{processing=false;}
+}
+function submit(text){if(!text.trim())return;$('error').style.display='none';const revision=++turnRevision;pendingTurn=pendingTurn.then(()=>turn(text.trim(),revision)).catch(e=>{error(e);status('Please try again','The message was not completed. No silent playback is scored.');});}
+function primeAudio(){if('speechSynthesis'in window&&!speaking){speechSynthesis.getVoices();const u=new SpeechSynthesisUtterance('Ready');u.volume=0;speechSynthesis.speak(u);}}
+async function enableMic(){
+ ending=false;$('error').style.display='none';primeAudio();$('start').disabled=true;
+ try{
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR)throw Error('Speech recognition is unavailable in this browser. Use Chrome desktop/Android, or type your request below.');
+  if(!navigator.mediaDevices?.getUserMedia)throw Error('Microphone needs a secure HTTPS browser tab. Open this page directly.');
+  mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  audioContext=new (window.AudioContext||window.webkitAudioContext)();await audioContext.resume();
+  const analyzer=audioContext.createAnalyser();analyzer.fftSize=1024;audioContext.createMediaStreamSource(mic).connect(analyzer);
+  const samples=new Float32Array(analyzer.fftSize);let onset=0;
+  listening=true;recognition=new SR();recognition.lang='en-US';recognition.continuous=true;recognition.interimResults=true;
+  recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const text=e.results[i][0].transcript;if(speaking)interrupt('Voice detected — audio stopped.').catch(error);clearTimeout(finalTimer);if(e.results[i].isFinal)finalText+=' '+text;else interim+=text;}$('interim').textContent=(finalText+' '+interim).trim();if(finalText&&!interim)finalTimer=setTimeout(()=>{const text=finalText;finalText='';submit(text);},550);};
+  recognition.onerror=e=>{if(e.error==='no-speech'||e.error==='aborted')return;error(Error('Speech recognition: '+e.error+'. You can still type below.'));if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error))disableMic();};
+  recognition.onend=()=>{if(listening)setTimeout(()=>{if(listening)try{recognition.start();}catch(e){error(e);}},350);};
+  recognition.start();
+  function meter(){if(!listening)return;analyzer.getFloatTimeDomainData(samples);const rms=Math.sqrt(samples.reduce((sum,v)=>sum+v*v,0)/samples.length);$('level').style.width=Math.min(100,rms*700)+'%';if(speaking&&rms>Number($('sensitivity').value)){if(!onset)onset=performance.now();if(performance.now()-onset>100){interrupt('Microphone barge-in detected.').catch(error);onset=0;}}else onset=0;frame=requestAnimationFrame(meter);}
+  meter();$('orb').classList.add('live');$('end').disabled=false;$('start').textContent='Microphone enabled';status('Listening','Tell me the party size and booking time, including AM or PM.');if(!session)reply('Hello! Welcome to BlackBox Bistro. How many people and what time would you like your table?');
+ }catch(e){disableMic();error(e);status('Typed input available','Microphone could not start. No booking has been created.');}
+}
+function disableMic(){listening=false;clearTimeout(finalTimer);finalText='';if(recognition){recognition.onend=null;recognition.abort();recognition=null;}if(mic){mic.getTracks().forEach(t=>t.stop());mic=null;}if(audioContext){audioContext.close();audioContext=null;}cancelAnimationFrame(frame);$('level').style.width='0';$('orb').classList.remove('live');$('start').disabled=false;$('start').textContent='Enable microphone';}
+$('start').onclick=enableMic;
+$('end').onclick=async()=>{ending=true;++turnRevision;disableMic();hush();await pendingTurn;await interrupt('Session ended.').catch(error);context={};session=null;$('end').disabled=true;status('Session ended','Microphone released. Confirmed bookings and audit evidence are preserved.');};
+$('form').onsubmit=e=>{e.preventDefault();ending=false;primeAudio();const text=$('text').value;$('text').value='';if(speaking)interrupt('Typed interruption received.').catch(error);submit(text);};
+for(const button of $('variants').children)button.onclick=()=>{if(speaking||processing){error(Error('End the current turn before switching variants.'));return;}variant=button.dataset.v;session=null;context={};for(const b of $('variants').children){b.classList.toggle('selected',b===button);b.setAttribute('aria-pressed',String(b===button));}$('policy').textContent=variant==='naive'?'Deliberately broken baseline: the same SQLite store commits before audio.':'The original AudioFence waits for acknowledged confirmation audio.';};
+window.addEventListener('pagehide',()=>{if(session&&!session.resolved){navigator.sendBeacon('/api/voice/event',new Blob([JSON.stringify({session_id:session.session_id,action:'interrupt',position_s:now()})],{type:'application/json'}));}hush();disableMic();});
+api('/api/health').then(()=>{connected=true;$('connection').textContent='Python harness connected';}).catch(e=>{$('connection').textContent='Backend unavailable';error(e);});
 })();
 </script>
 </body>

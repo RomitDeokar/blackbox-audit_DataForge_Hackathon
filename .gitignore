@@ -33,3 +33,10 @@ results/*.jsonl
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Local validation and deployment tooling
+.pytest_tmp/
+.tools/
+.deploy/
+.preview/
+.wrangler/
